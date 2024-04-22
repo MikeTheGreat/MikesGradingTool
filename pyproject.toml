@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "mikesgradingtool"
+version = "0.1.1"
+description = ""
+authors = ["Mike Panitz <mike.panitz@gmail.com>"]
+#readme = "README.md"
+
+
+[tool.poetry.dependencies]
+python = "^3.12"
+canvasapi = "^3.2.0"
+argparse = "^1.4.0"
+colorama = "^0.4.6"
+jsmin = "^3.0.1"
+jk-commentjson = "^0.2017.10.7"
+keyboard = "^0.13.5"
+rich = "^13.7.1"
+
+[tool.poetry.scripts]
+mikesgradingtool = "mikesgradingtool.__main__:CLI"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
