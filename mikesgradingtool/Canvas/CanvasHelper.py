@@ -608,6 +608,7 @@ def fn_canvas_package_feedback_for_upload(args):
 
 
 def fn_canvas_upload_feedback_via_CAPI(args):
+    config = get_app_config()
 
     hw_info = lookupHWInfoFromAlias(args.ALIAS)
     if hw_info is not None:
@@ -626,6 +627,13 @@ def fn_canvas_upload_feedback_via_CAPI(args):
     if not os.path.exists(dest_dir):
         printError("Homework folder does not exist: " + dest_dir )
         sys.exit(-1);
+
+    hw_full_name = config.getKey(f"courses/{course}/assignments/{hw_name}/full_name")
+
+    if not confirm_choice("Do you want to upload feedback for this course?", hw_full_name, \
+                   "Uploading homework feedback files to Canvas", \
+                   "Operation canceled - NO FILES UPLOADED"):
+        return
 
     with cd(dest_dir):
 
@@ -658,8 +666,6 @@ def fn_canvas_upload_feedback_via_CAPI(args):
                 results_lists.graded.append(fp_feedback_to_upload)
             else:
                 results_lists.new_student_work_since_grading.append(fp_feedback_to_upload)
-
-        config = get_app_config()
 
         if dest_dir is  None:
             dest_dir = config.getKey(f"courses/{course}/assignments/{hw_name}/dest_dir")
@@ -1339,6 +1345,27 @@ def cmp_AssignmentForDisplay_by_name(a,b):
     else:
         return -1 if a.title < b.title else +1
 
+
+def confirm_choice(szPrompt: str, szTypeThis:str, szMsgProceeding: str, szMsgCancel:str):
+    szTypeThis = szTypeThis.strip()
+
+    print("\n"+szPrompt)
+    print("\tIf so, please type in")
+    print(Style.BRIGHT + Fore.RED + Back.BLACK \
+            + szTypeThis \
+            + Style.RESET_ALL )
+    print("(this is case sensitive), followed by Enter/Return")
+    print("Type anything else (or leave it blank) and press Enter/Return to cancel")
+
+    confirm = input("").strip()
+
+    if confirm != szTypeThis:
+        print(szMsgCancel)
+        return False
+
+    print(Style.BRIGHT + Fore.RED + "\n\n" + szMsgProceeding + "\n" + Style.RESET_ALL)
+    return True
+
 ## TODO
 #
 # Add events for non-instructional days (but only if they're not already in the schedule)
@@ -1470,21 +1497,10 @@ def fn_canvas_set_due_dates(args):
     print(f"\tQuarter start date: {general_due_date_info['date_of_first_day_of_the_quarter'].strftime('%a, %B %d, %Y')}")
     print(f"\tQuarter end date:   {general_due_date_info['date_of_last_day_of_the_quarter'].strftime('%a, %B %d, %Y')}")
 
-    print("\nDo you want to change the due dates for this course?")
-    print("\tIf so, please type in")
-    print(Style.BRIGHT + Fore.RED + Back.BLACK \
-            + course.name.strip() \
-            + Style.RESET_ALL )
-    print("(this is case sensitive), followed by Enter/Return")
-    print("Type anything else (or leave it blank) and press Enter/Return to cancel")
-
-    confirm = input("")
-
-    if confirm != course.name.strip():
-        print("Operation canceled - NO CHANGES MADE")
+    if not confirm_choice("Do you want to change the due dates for this course?", course.name, \
+                   "Updating due dates now", \
+                   "Operation canceled - NO CHANGES MADE"):
         return
-
-    print(Style.BRIGHT + Fore.RED + "\n\nUpdating due dates now\n" + Style.RESET_ALL)
 
     # Get all assignments:
     capi_assignments = course.get_assignments()
