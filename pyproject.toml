@@ -3,7 +3,7 @@ name = "mikesgradingtool"
 version = "0.1.1"
 description = ""
 authors = ["Mike Panitz <mike.panitz@gmail.com>"]
-#readme = "README.md"
+readme = "README.md"
 
 
 [tool.poetry.dependencies]
@@ -15,6 +15,8 @@ jsmin = "^3.0.1"
 jk-commentjson = "^0.2017.10.7"
 keyboard = "^0.13.5"
 rich = "^13.7.1"
+jinja2 = "^3.1.3"
+setuptools = "^69.5.1"
 
 [tool.poetry.scripts]
 mikesgradingtool = "mikesgradingtool.__main__:CLI"
