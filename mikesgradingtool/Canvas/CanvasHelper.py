@@ -32,7 +32,7 @@ from canvasapi.submission import Submission
 from canvasapi.user import User
 
 from colorama import Fore, Style, Back
-
+from jinja2 import UndefinedError, StrictUndefined, Environment
 # import win32com.client
 from rich import box
 from rich.console import Console
@@ -47,7 +47,6 @@ from mikesgradingtool.utils.misc_utils import cd, format_filename, is_file_locke
 from mikesgradingtool.utils.my_logging import get_logger
 from mikesgradingtool.utils.print_utils import GradingToolError, print_list, printError
 
-from colorama import Fore, Style
 
 #console = Console(color_system="truecolor", tab_size=4)
 console = Console(color_system="auto", tab_size=4)
@@ -193,7 +192,6 @@ def _getStudentFeedbackFiles(rootDir, only_canvas=True):
                 submissions[key] = fp_new_real_item
     return submissions
 
-
 def fn_canvas_autograde(args):
     raise GradingToolError("This feature hasn't been updated, and thus won't work reliably")
 
@@ -212,6 +210,134 @@ def fn_canvas_autograde(args):
     # sz_glob_student_dir = "*"+student_submission_dir_suffix
     #
     # autograder_common_actions(args, sz_glob_student_dir, fn_canvas_organize_files, fn_canvas_convert_dir_to_student_sub)
+
+def fn_canvas_new_announcement(args):
+
+    hw_info = lookupHWInfoFromAlias(args.ALIAS_OR_COURSE)
+    if hw_info is None:
+        printError(f"Couldn't find an alias for {args.ALIAS_OR_COURSE}")
+        course_name = args.ALIAS_OR_COURSE
+    else:
+        course_name = hw_info.course
+
+    optional_date = None
+    if args.DATE is not None:
+        try:
+            optional_date = datetime.datetime.strptime(args.DATE, "%Y-%m-%d-%H-%M")
+        except:
+            try:
+                optional_date = datetime.datetime.strptime(args.DATE, "%Y-%m-%d")
+                optional_date = datetime.datetime.combine(optional_date.date(), datetime.time(23, 59, 0))
+            except:
+                pass
+    template_name = args.TEMPLATE
+
+    verbose = args.VERBOSE
+
+    config = get_app_config()
+
+    # Get the file path to the templates (both title and message/body)
+    api_url, course_obj, fp_title_template, fp_message_template = config.verify_keys([
+        "canvas/api/url",
+        f"courses/{course_name}",
+        f"courses/{course_name}/announcement_templates/title_{template_name}",
+        f"courses/{course_name}/announcement_templates/message_{template_name}"
+    ])
+    assign_obj = None
+    if hw_info is not None:
+        assign_obj = config.getKey(f"courses/{course_name}/assignments/{hw_info.hw}", "")
+
+
+    def read_template_file(path: str, title_or_msg: str):
+        try:
+            # Open the text file in read mode
+            with open(path, 'r') as file:
+                # Read the entire contents of the file into a variable
+                return file.read()
+        except FileNotFoundError:
+            printError(f"Couldn't find the {title_or_msg} file at {path}")
+        except PermissionError:
+            printError(f"Permission denied for the {title_or_msg} file at {path}")
+        except IOError as e:
+            printError(f"When attempting to read the {title_or_msg} file at {path}, an I/O error occurred:", e)
+
+        # if we couldn't get the template:
+        return None
+
+    sz_title_template =  read_template_file(fp_title_template, "title")
+    sz_message_template = read_template_file(fp_message_template, "title")
+
+    # Create a Jinja Template object
+    # Create a Jinja2 Environment with strict undefined behavior
+    env = Environment(undefined=StrictUndefined)
+
+    # Create a Jinja Template object
+    title_template = env.from_string(sz_title_template)
+
+    message_template = env.from_string(sz_message_template)
+
+    print("Search for the course in Canvas:")
+    sz_re_quarter = ".*"
+    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
+
+    if len(matching_courses.items()) == 0:
+        printError(f"Couldn't find any courses matching {course_name}")
+        return
+
+    if len(matching_courses.items()) > 1:
+        printError(f"Found more than 1 course matching {course_name}")
+        for key, course in matching_courses.items():
+            print(f"\t{key}")
+        return
+
+    the_course = (matching_courses.popitem()[1])[0]
+
+    ### TODO: GET DATA FOR THE COURSE & ASSIGNMENT (NAME, ETC)
+    # Define data to pass into the template
+    data = {
+        'course': course_obj,
+        'assignment': assign_obj,
+    }
+
+    if optional_date:
+        data['date'] = optional_date
+
+    if hw_info:
+        # We may need the Canvas ID of the Assignment (if we want to link to it)
+        # so try to get it now
+
+        next_assignment_name = config.getKey(f"courses/{course_name}/assignments/{hw_info.next_version}/canvas_api/canvas_name", "")
+
+        if next_assignment_name != "":
+            # Get all assignments:
+            assignments = the_course.get_assignments()
+            next_assignment_url = None
+
+            for assign in assignments:
+                if assign.name == next_assignment_name:
+                    next_assignment_url = f"{api_url}courses/{the_course.id}/assignments/{assign.id}"
+                    data['next_assignment_url'] = next_assignment_url
+                    break
+
+    try:
+        # Render the template with the data
+        title_rendered = title_template.render(data)
+        message_rendered = message_template.render(data)
+    except UndefinedError as ue:
+        printError(f"The template used a variable that wasn't defined: {ue.message}")
+        print("data:")
+        pp.pprint(data)
+        sys.exit(-1)
+
+    try:
+        result = the_course.create_discussion_topic(title=title_rendered, message=message_rendered, is_announcement=True)
+        # result is a DiscussionTopic object, if we want to change it for some reason
+        print(f"Posted announcement to Canvas at\n\t{api_url}courses/{result.course_id}/discussion_topics/{result.id}")
+    except canvasapi.exceptions.CanvasException as ce:
+        printError("Couldn't post to Canvas: " + ce.message)
+        # Base exception class: canvasapi.exceptions.CanvasException
+        # https://canvasapi.readthedocs.io/en/stable/exceptions.html
+
 
 
 def fn_canvas_organize_files(args):

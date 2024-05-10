@@ -198,7 +198,7 @@ def CaseInsensitiveDict_Recursive(dictionary: dict):
         cid[k] = d
     return cid
 
-HWInfo = namedtuple('HWInfo', 'course hw fp_dest_dir fp_template prior_version')
+HWInfo = namedtuple('HWInfo', 'course hw fp_dest_dir fp_template prior_version next_version')
 def lookupHWInfoFromAlias(possible_alias):
     try:
         config = get_app_config()
@@ -234,7 +234,11 @@ def lookupHWInfoFromAlias(possible_alias):
     if prior_version == "":
         prior_version = None
 
-    return HWInfo(course, hw, fp_hw_dest_dir, fp_hw_template, prior_version)
+    next_version = config.getKey(f"courses/{course}/assignments/{hw}/next_version", "")
+    if next_version == "":
+        next_version = None
+
+    return HWInfo(course, hw, fp_hw_dest_dir, fp_hw_template, prior_version, next_version)
 
 
 SZ_COURSE_TO_INHERIT_FROM = "inherits_from"

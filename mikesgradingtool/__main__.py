@@ -206,8 +206,19 @@ def CLI():
                                                help='Directory to download homework into and/or update existing repos')
         parser_download_homeworks.add_argument('-q', '--QUARTER',
                                                help='Quarter code to look for (e.g., "S20" for Spring 2020)')
-        parser_download_homeworks.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show status of all repos (default is to show only those that have changed/need grading)')
+        parser_download_homeworks.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
         parser_download_homeworks.set_defaults(func=CanvasHelper.fn_canvas_download_homework)
+
+        parser_canvas_new_announcement = canvas_subparsers.add_parser('new_announcement',
+                                                                aliases=['a'],
+                                                                help=f'Post a new announcement for a particular course')
+        parser_canvas_new_announcement.add_argument('ALIAS_OR_COURSE',
+                                               help='Alias for course + assignment, or the name of the course (e.g., 142)')
+        parser_canvas_new_announcement.add_argument('TEMPLATE',
+                                               help='The name of the announcement template to use')
+        parser_canvas_new_announcement.add_argument('-d', '--DATE', help='Date (if the template needs it)in %Y-%m-%d-%H-%M or %Y-%m-%d format')
+        parser_canvas_new_announcement.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
+        parser_canvas_new_announcement.set_defaults(func=CanvasHelper.fn_canvas_new_announcement)
 
         parser_canvas_org = canvas_subparsers.add_parser('revisions',
                                                  aliases=['r'],
