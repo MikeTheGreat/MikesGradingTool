@@ -201,9 +201,21 @@ def CLI():
                                                help='Alias for course + assignment, or the name of the course (e.g., 142)')
         parser_canvas_new_announcement.add_argument('TEMPLATE', nargs='?', default='',
                                                help='The name of the announcement template to use (Optional)')
-        parser_canvas_new_announcement.add_argument('-d', '--DATE', help='Date (if the template needs it)in YYYY-MM-DD-HH-MM or YYYY-MM-DD (11:50pm assumed) formatd')
+        parser_canvas_new_announcement.add_argument('-d', '--DATE', help='Date (if the template needs it) in YYYY-MM-DD-HH-MM or YYYY-MM-DD (11:50pm assumed) format')
         parser_canvas_new_announcement.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
         parser_canvas_new_announcement.set_defaults(func=CanvasHelper.fn_canvas_new_announcement)
+
+        parser_canvas_set_assignment_due_date = canvas_subparsers.add_parser('set_assignment_due_date',
+                                                                aliases=['dud'],
+                                                                help=f'Set the due date for an assignment (c.f. calculate_all_due_dates)')
+        parser_canvas_set_assignment_due_date.add_argument('ALIAS_OR_COURSE',
+                                               help='Alias for course + assignment, or the name of the course (e.g., 142)')
+        parser_canvas_set_assignment_due_date.add_argument('DUE_DATE',
+                                                   help='Due date in YYYY-MM-DD-HH-MM or YYYY-MM-DD (11:50pm assumed) format, or the letter x to remove (delete) the due date')
+        parser_canvas_set_assignment_due_date.add_argument('HOMEWORK_NAME', nargs='?', default='',
+                                               help='The name of the homework assignment (Optional - for when alias isn\'t used)')
+        parser_canvas_set_assignment_due_date.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
+        parser_canvas_set_assignment_due_date.set_defaults(func=CanvasHelper.fn_canvas_set_assignment_due_date)
 
         parser_download_homeworks = canvas_subparsers.add_parser('download',
                                                                      aliases=['d'],
@@ -226,11 +238,11 @@ def CLI():
                                                help='Alias for course + assignment, or the name of the course (e.g., 142)')
         parser_canvas_lock_assignment.add_argument('HOMEWORK_NAME', nargs='?', default='',
                                                help='The name of the homework assignment (Optional - for when alias isn\'t used)')
-        parser_canvas_lock_assignment.add_argument('-u', '--UNLOCK', action='store_true', help='Unlock the assignment (when missing, this defaults to "yes, lock the assignment")')
+        parser_canvas_lock_assignment.add_argument('-u', '--UNLOCK', action='store_false', help='Unlock the assignment (when missing, this defaults to "yes, lock the assignment")')
         parser_canvas_lock_assignment.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
         parser_canvas_lock_assignment.set_defaults(func=CanvasHelper.fn_canvas_lock_assignment)
 
-        parser_canvas_set_due_dates = canvas_subparsers.add_parser('homework_due_date',
+        parser_canvas_set_due_dates = canvas_subparsers.add_parser('calculate_all_due_dates',
                                                                    aliases=['h'],
                                                                    help=f'Set the due dates for all homeworks in a particular course')
         parser_canvas_set_due_dates.add_argument('COURSE',
@@ -242,11 +254,22 @@ def CLI():
         parser_canvas_set_due_dates.set_defaults(func=CanvasHelper.fn_canvas_set_due_dates)
 
         parser_canvas_package_ = canvas_subparsers.add_parser('package',
-                                                                aliases=['p'],
+                                                                aliases=['pu'],
                                                                 help=f'Package all feedback files to upload to Canvas.  All files from Canvas are put into a .ZIP (named {dir_for_new_feedbacks}), new feedback files are put into a new directory (named {zip_file_name})')
         parser_canvas_package_.add_argument('SRC',
                                             help='The directory that contains the feedback files to upload')
         parser_canvas_package_.set_defaults(func=CanvasHelper.fn_canvas_package_feedback_for_upload)
+
+        parser_canvas_post_assignment_grades = canvas_subparsers.add_parser('post_assignment_grade',
+                                                                aliases=['p'],
+                                                                help=f'Lock (or unlock) an assignment to prevent (allow) homework uploads.  Does not prevent students from attaching files to Canvas comments on their submission, sadly')
+        parser_canvas_post_assignment_grades.add_argument('ALIAS_OR_COURSE',
+                                               help='Alias for course + assignment, or the name of the course (e.g., 142)')
+        parser_canvas_post_assignment_grades.add_argument('HOMEWORK_NAME', nargs='?', default='',
+                                               help='The name of the homework assignment (Optional - for when alias isn\'t used)')
+        parser_canvas_post_assignment_grades.add_argument('-i', '--HIDE', action='store_true', help='Hide the assignment\'s grades (when missing, this defaults to "show the assignment\'s grades to the students")')
+        parser_canvas_post_assignment_grades.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
+        parser_canvas_post_assignment_grades.set_defaults(func=CanvasHelper.fn_canvas_post_assignment_grades)
 
         parser_canvas_org = canvas_subparsers.add_parser('revisions',
                                                  aliases=['r'],

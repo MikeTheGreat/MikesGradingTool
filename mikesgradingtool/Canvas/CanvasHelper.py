@@ -214,8 +214,6 @@ def fn_canvas_autograde(args):
 def get_canvas_course_and_assignment(course_name, hw_name, verbose):
     config = get_app_config()
 
-
-    print("Searching for the course in Canvas:")
     sz_re_quarter = ".*"
     matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
 
@@ -247,47 +245,98 @@ def get_canvas_course_and_assignment(course_name, hw_name, verbose):
 
     return the_course, the_assignment
 
+def parse_datetime_with_or_without_time(sz):
+    parsed_datetime = None
+    if sz is not None:
+        try:
+            parsed_datetime = datetime.datetime.strptime(sz, "%Y-%m-%d-%H-%M")
+        except:
+            try:
+                parsed_datetime = datetime.datetime.strptime(sz, "%Y-%m-%d")
+                parsed_datetime = datetime.datetime.combine(parsed_datetime.date(), datetime.time(23, 59, 0))
+            except:
+                pass
+    return parsed_datetime
+
+def fn_canvas_set_assignment_due_date(args):
+    print(f"Changing assignment due date to {args.DUE_DATE}")
+
+    verbose = args.VERBOSE
+
+    if args.DUE_DATE == 'x':
+        due_date = ''
+        msg_success = f"Removing the assignment's due date"
+    else:
+        due_date = parse_datetime_with_or_without_time(args.DUE_DATE)
+        if due_date is None:
+            raise GradingToolError(f"Couldn't convert this to  datetime using YYYY-MM-DD or YYYY-MM-DD-HH-MM formats: {args.DUE_DATE}")
+        due_date = due_date.isoformat()
+        msg_success = f"Set the assignment's due date to {due_date}"
+
+    assignment = {'due_at': due_date}
+
+    edit_course(args.ALIAS_OR_COURSE, args.HOMEWORK_NAME, verbose, assignment, msg_success)
+
+
+def fn_canvas_post_assignment_grades(args):
+    verbose = args.VERBOSE
+
+    hide = args.HIDE
+    if hide:
+        print(f"Hiding grades (in the gradebook) for an assignment")
+        msg_success = f"HIDDEN: Assignment grades are NOT visible to the students in the Canvas gradebook"
+    else:
+        print(f"Showing grades (in the gradebook) for an assignment")
+        msg_success = f"SHOWN: Assignment grades ARE visible to the students in the Canvas gradebook"
+
+    assignment = {'hide_in_gradebook': hide}
+
+    edit_course(args.ALIAS_OR_COURSE, args.HOMEWORK_NAME, verbose, assignment, msg_success)
 
 def fn_canvas_lock_assignment(args):
 
-    config = get_app_config()
-    api_url = config.verify_keys([
-        "canvas/api/url"
-    ])
-    lock = not args.UNLOCK
     verbose = args.VERBOSE
 
-    hw_info = lookupHWInfoFromAlias(args.ALIAS_OR_COURSE)
-    if hw_info is not None:
-        course_name = hw_info.course
-        hw_name = hw_info.hw
-    else:
-        course_name = args.ALIAS_OR_COURSE
-        hw_name = args.HOMEWORK_NAME
-
-    canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
-
+    lock = args.UNLOCK
     if lock:
         # Calculate the time 30 minutes before the current time for the locking time
         # This will effectively lock it now, and it's early enough that there's no risk of clocks being off slightly
         lock_at = (datetime.datetime.now() - datetime.timedelta(minutes=30)).isoformat()
+        msg_success = f"Locked the assignment (starting 30 mintues ago, at {lock_at})"
     else:
         lock_at = ''
+        msg_success = f"Unlocked the assignment"
+
+    assignment = {'lock_at': lock_at}
+
+    edit_course(args.ALIAS_OR_COURSE, args.HOMEWORK_NAME, verbose, assignment, msg_success)
+
+def edit_course(alias_or_course, homework_name, verbose, dict_assignment_edits, msg_success):
+    config = get_app_config()
+    api_url = config.verify_keys([
+        "canvas/api/url"
+    ])
+
+    hw_info = lookupHWInfoFromAlias(alias_or_course)
+    if hw_info is not None:
+        course_name = hw_info.course
+        hw_name = hw_info.hw
+    else:
+        course_name = alias_or_course
+        hw_name = homework_name
+
+    canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
 
     try:
-        canvas_assignment.edit(assignment={'lock_at': lock_at})
-        if lock:
-            print(f"Locked the assignment (starting 30 mintues ago, at {lock_at})")
-        else:
-            print(f"Unlocked the assignment")
-        print(f"Assignment URL: {api_url}courses/{canvas_course.id}/assignments/{canvas_assignment.id}")
+        canvas_assignment.edit(assignment=dict_assignment_edits)
+        print(msg_success)
 
     except canvasapi.exceptions.CanvasException as ce:
         printError("Couldn't post to Canvas: " + ce.message)
 
+    print(f"Assignment URL: {api_url}courses/{canvas_course.id}/assignments/{canvas_assignment.id}")
 
 def fn_canvas_new_announcement(args):
-
     config = get_app_config()
 
     verbose = args.VERBOSE
@@ -308,16 +357,9 @@ def fn_canvas_new_announcement(args):
             if template_name == "":
                 raise GradingToolError("No template specified for this assignment: Couldn't find a default_announcement_template key in gradingtool.json, nor a command line paramater")
 
-    optional_date = None
-    if args.DATE is not None:
-        try:
-            optional_date = datetime.datetime.strptime(args.DATE, "%Y-%m-%d-%H-%M")
-        except:
-            try:
-                optional_date = datetime.datetime.strptime(args.DATE, "%Y-%m-%d")
-                optional_date = datetime.datetime.combine(optional_date.date(), datetime.time(23, 59, 0))
-            except:
-                pass
+    print(f"Posting new announcement for course {course_name}")
+
+    optional_date = parse_datetime_with_or_without_time(args.DATE)
 
     # Get the file path to the templates (both title and message/body)
     api_url, course_obj, fp_title_template, fp_message_template = config.verify_keys([
