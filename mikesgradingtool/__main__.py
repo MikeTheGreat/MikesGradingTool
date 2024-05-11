@@ -194,6 +194,16 @@ def CLI():
 
         canvas_subparsers = parser_canvas.add_subparsers(dest='subcommand', help="Help for the canvas parser")
 
+        parser_canvas_new_announcement = canvas_subparsers.add_parser('new_announcement',
+                                                                aliases=['a'],
+                                                                help=f'Post a new announcement for a particular course')
+        parser_canvas_new_announcement.add_argument('ALIAS_OR_COURSE',
+                                               help='Alias for course + assignment, or the name of the course (e.g., 142)')
+        parser_canvas_new_announcement.add_argument('TEMPLATE', nargs='?', default='',
+                                               help='The name of the announcement template to use (Optional)')
+        parser_canvas_new_announcement.add_argument('-d', '--DATE', help='Date (if the template needs it)in YYYY-MM-DD-HH-MM or YYYY-MM-DD (11:50pm assumed) formatd')
+        parser_canvas_new_announcement.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
+        parser_canvas_new_announcement.set_defaults(func=CanvasHelper.fn_canvas_new_announcement)
 
         parser_download_homeworks = canvas_subparsers.add_parser('download',
                                                                      aliases=['d'],
@@ -209,16 +219,23 @@ def CLI():
         parser_download_homeworks.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
         parser_download_homeworks.set_defaults(func=CanvasHelper.fn_canvas_download_homework)
 
-        parser_canvas_new_announcement = canvas_subparsers.add_parser('new_announcement',
-                                                                aliases=['a'],
-                                                                help=f'Post a new announcement for a particular course')
-        parser_canvas_new_announcement.add_argument('ALIAS_OR_COURSE',
-                                               help='Alias for course + assignment, or the name of the course (e.g., 142)')
-        parser_canvas_new_announcement.add_argument('TEMPLATE', nargs='?', default='',
-                                               help='The name of the announcement template to use (Optional)')
-        parser_canvas_new_announcement.add_argument('-d', '--DATE', help='Date (if the template needs it)in YYYY-MM-DD-HH-MM or YYYY-MM-DD (11:50pm assumed) formatd')
-        parser_canvas_new_announcement.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
-        parser_canvas_new_announcement.set_defaults(func=CanvasHelper.fn_canvas_new_announcement)
+        parser_canvas_set_due_dates = canvas_subparsers.add_parser('homework_due_date',
+                                                                aliases=['h'],
+                                                                help=f'Set the due dates for all homeworks in a particular course')
+        parser_canvas_set_due_dates.add_argument('COURSE',
+                                               help='Name of the course (e.g., 142)')
+        parser_canvas_set_due_dates.add_argument('HOMEWORK_NAME', nargs='?', default='',
+                                               help='The name of the homework assignment (to update only that assignment)')
+        parser_canvas_set_due_dates.add_argument('-f', '--FIRST_DAY_OF_QUARTER', nargs='?', default='',
+                                               help='The first day of the quarter, in YYYY/MM/DD format (so Sept 27th, 2023 would be 2023/09/27)')
+        parser_canvas_set_due_dates.set_defaults(func=CanvasHelper.fn_canvas_set_due_dates)
+
+        parser_canvas_package_ = canvas_subparsers.add_parser('package',
+                                                                aliases=['p'],
+                                                                help=f'Package all feedback files to upload to Canvas.  All files from Canvas are put into a .ZIP (named {dir_for_new_feedbacks}), new feedback files are put into a new directory (named {zip_file_name})')
+        parser_canvas_package_.add_argument('SRC',
+                                            help='The directory that contains the feedback files to upload')
+        parser_canvas_package_.set_defaults(func=CanvasHelper.fn_canvas_package_feedback_for_upload)
 
         parser_canvas_org = canvas_subparsers.add_parser('revisions',
                                                  aliases=['r'],
@@ -235,13 +252,6 @@ def CLI():
         parser_canvas_template_copier.add_argument('SRC', nargs='?', default='',
                                                   help='The directory that contains the files to copy the template into (the "_NEW" dir will be created in here')
         parser_canvas_template_copier.set_defaults(func=CanvasHelper.fn_canvas_copy_template)
-
-        parser_canvas_package_ = canvas_subparsers.add_parser('package',
-                                                                aliases=['p'],
-                                                                help=f'Package all feedback files to upload to Canvas.  All files from Canvas are put into a .ZIP (named {dir_for_new_feedbacks}), new feedback files are put into a new directory (named {zip_file_name})')
-        parser_canvas_package_.add_argument('SRC',
-                                            help='The directory that contains the feedback files to upload')
-        parser_canvas_package_.set_defaults(func=CanvasHelper.fn_canvas_package_feedback_for_upload)
 
         parser_canvas_upload_feedback = canvas_subparsers.add_parser('upload_feedback',
                                                                 aliases=['u'],
@@ -260,18 +270,6 @@ def CLI():
                                             help='The alias (listed in gradingtool.json) that refers to the course and assignment')
         parser_canvas_d_r_l.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show status of all repos (default is to show only those that have changed/need grading)')
         parser_canvas_d_r_l.set_defaults(func=CanvasHelper.fn_canvas_download_revision_template)
-
-        parser_canvas_set_due_dates = canvas_subparsers.add_parser('homework_due_date',
-                                                                aliases=['h'],
-                                                                help=f'Set the due dates for all homeworks in a particular course')
-        parser_canvas_set_due_dates.add_argument('COURSE',
-                                               help='Name of the course (e.g., 142)')
-        parser_canvas_set_due_dates.add_argument('HOMEWORK_NAME', nargs='?', default='',
-                                               help='The name of the homework assignment (to update only that assignment)')
-        parser_canvas_set_due_dates.add_argument('-f', '--FIRST_DAY_OF_QUARTER', nargs='?', default='',
-                                               help='The first day of the quarter, in YYYY/MM/DD format (so Sept 27th, 2023 would be 2023/09/27)')
-        parser_canvas_set_due_dates.set_defaults(func=CanvasHelper.fn_canvas_set_due_dates)
-
 
 
     # now let's actually install these:
