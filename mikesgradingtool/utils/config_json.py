@@ -277,7 +277,7 @@ def merge_CaseInsensitiveDicts(src, dest):
 
 def mergeBaseCourseIntoNewCourse(json_config_courses, base_course, course):
     if SZ_COURSE_TO_INHERIT_FROM in base_course:
-        base_course = merge_CaseInsensitiveDicts(json_config_courses, json_config_courses[SZ_COURSE_TO_INHERIT_FROM], base_course)
+        base_course = merge_CaseInsensitiveDicts(json_config_courses[base_course[SZ_COURSE_TO_INHERIT_FROM]], base_course)
     else:
         base_course = copy.deepcopy(base_course)
 
