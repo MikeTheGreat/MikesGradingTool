@@ -202,7 +202,7 @@ def CLI():
         parser_canvas_new_announcement.add_argument('TEMPLATE', nargs='?', default='',
                                                help='The name of the announcement template to use (Optional)')
         parser_canvas_new_announcement.add_argument('-d', '--DATE', help='Date (if the template needs it)in YYYY-MM-DD-HH-MM or YYYY-MM-DD (11:50pm assumed) formatd')
-        parser_canvas_new_announcement.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
+        parser_canvas_new_announcement.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
         parser_canvas_new_announcement.set_defaults(func=CanvasHelper.fn_canvas_new_announcement)
 
         parser_download_homeworks = canvas_subparsers.add_parser('download',
@@ -216,18 +216,29 @@ def CLI():
                                                help='Directory to download homework into and/or update existing repos')
         parser_download_homeworks.add_argument('-q', '--QUARTER',
                                                help='Quarter code to look for (e.g., "S20" for Spring 2020)')
-        parser_download_homeworks.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
+        parser_download_homeworks.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
         parser_download_homeworks.set_defaults(func=CanvasHelper.fn_canvas_download_homework)
 
+        parser_canvas_lock_assignment = canvas_subparsers.add_parser('lock_assignment',
+                                                                aliases=['l'],
+                                                                help=f'Lock (or unlock) an assignment to prevent (allow) homework uploads.  Does not prevent students from attaching files to Canvas comments on their submission, sadly')
+        parser_canvas_lock_assignment.add_argument('ALIAS_OR_COURSE',
+                                               help='Alias for course + assignment, or the name of the course (e.g., 142)')
+        parser_canvas_lock_assignment.add_argument('HOMEWORK_NAME', nargs='?', default='',
+                                               help='The name of the homework assignment (Optional - for when alias isn\'t used)')
+        parser_canvas_lock_assignment.add_argument('-u', '--UNLOCK', action='store_true', help='Unlock the assignment (when missing, this defaults to "yes, lock the assignment")')
+        parser_canvas_lock_assignment.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
+        parser_canvas_lock_assignment.set_defaults(func=CanvasHelper.fn_canvas_lock_assignment)
+
         parser_canvas_set_due_dates = canvas_subparsers.add_parser('homework_due_date',
-                                                                aliases=['h'],
-                                                                help=f'Set the due dates for all homeworks in a particular course')
+                                                                   aliases=['h'],
+                                                                   help=f'Set the due dates for all homeworks in a particular course')
         parser_canvas_set_due_dates.add_argument('COURSE',
-                                               help='Name of the course (e.g., 142)')
+                                                 help='Name of the course (e.g., 142)')
         parser_canvas_set_due_dates.add_argument('HOMEWORK_NAME', nargs='?', default='',
-                                               help='The name of the homework assignment (to update only that assignment)')
+                                                 help='The name of the homework assignment (to update only that assignment)')
         parser_canvas_set_due_dates.add_argument('-f', '--FIRST_DAY_OF_QUARTER', nargs='?', default='',
-                                               help='The first day of the quarter, in YYYY/MM/DD format (so Sept 27th, 2023 would be 2023/09/27)')
+                                                 help='The first day of the quarter, in YYYY/MM/DD format (so Sept 27th, 2023 would be 2023/09/27)')
         parser_canvas_set_due_dates.set_defaults(func=CanvasHelper.fn_canvas_set_due_dates)
 
         parser_canvas_package_ = canvas_subparsers.add_parser('package',
@@ -260,7 +271,7 @@ def CLI():
                                             help='The alias (listed in gradingtool.json) that refers to the course and assignment')
         parser_canvas_upload_feedback.add_argument('DEST', nargs='?', default=None,
                                                help='(Optional) The name of a single homework directory (to upload only that assignment)')
-        parser_canvas_upload_feedback.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show verbose output')
+        parser_canvas_upload_feedback.add_argument('-v', '--VERBOSE', action='store_true', help='Show verbose output')
         parser_canvas_upload_feedback.set_defaults(func=CanvasHelper.fn_canvas_upload_feedback_via_CAPI)
 
         parser_canvas_d_r_l = canvas_subparsers.add_parser('downloadRevisionTemplate',
@@ -268,7 +279,7 @@ def CLI():
                                                                 help=f'Using an alias, download the assignment, copy feedback from the prior revision (if it exists), then copy the grading template into the assignments')
         parser_canvas_d_r_l.add_argument('alias',
                                             help='The alias (listed in gradingtool.json) that refers to the course and assignment')
-        parser_canvas_d_r_l.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show status of all repos (default is to show only those that have changed/need grading)')
+        parser_canvas_d_r_l.add_argument('-v', '--VERBOSE', action='store_true', help='Show status of all repos (default is to show only those that have changed/need grading)')
         parser_canvas_d_r_l.set_defaults(func=CanvasHelper.fn_canvas_download_revision_template)
 
 

@@ -211,12 +211,87 @@ def fn_canvas_autograde(args):
     #
     # autograder_common_actions(args, sz_glob_student_dir, fn_canvas_organize_files, fn_canvas_convert_dir_to_student_sub)
 
+def get_canvas_course_and_assignment(course_name, hw_name, verbose):
+    config = get_app_config()
+
+
+    print("Searching for the course in Canvas:")
+    sz_re_quarter = ".*"
+    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
+
+    if len(matching_courses.items()) == 0:
+        printError(f"Couldn't find any courses matching {course_name}")
+        return None, None
+
+    if len(matching_courses.items()) > 1:
+        printError(f"Found more than 1 course matching {course_name}")
+        for key, course in matching_courses.items():
+            print(f"\t{key}")
+        return None, None
+
+    the_course = (matching_courses.popitem()[1])[0]
+
+    the_assignment = None
+
+    assignment_name = config.getKey(
+        f"courses/{course_name}/assignments/{hw_name}/canvas_api/canvas_name", "")
+    if assignment_name != "":
+        print("\tSearching for the assignment, within the course")
+        for assign in the_course.get_assignments():
+            if assign.name == assignment_name:
+                the_assignment = assign
+                break
+
+    if the_assignment is None:
+        printError(f"Couldn't find assignment matching {hw_name} in {course_name}")
+
+    return the_course, the_assignment
+
+
+def fn_canvas_lock_assignment(args):
+
+    config = get_app_config()
+    api_url = config.verify_keys([
+        "canvas/api/url"
+    ])
+    lock = not args.UNLOCK
+    verbose = args.VERBOSE
+
+    hw_info = lookupHWInfoFromAlias(args.ALIAS_OR_COURSE)
+    if hw_info is not None:
+        course_name = hw_info.course
+        hw_name = hw_info.hw
+    else:
+        course_name = args.ALIAS_OR_COURSE
+        hw_name = args.HOMEWORK_NAME
+
+    canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
+
+    if lock:
+        # Calculate the time 30 minutes before the current time for the locking time
+        # This will effectively lock it now, and it's early enough that there's no risk of clocks being off slightly
+        lock_at = (datetime.datetime.now() - datetime.timedelta(minutes=30)).isoformat()
+    else:
+        lock_at = ''
+
+    try:
+        canvas_assignment.edit(assignment={'lock_at': lock_at})
+        if lock:
+            print(f"Locked the assignment (starting 30 mintues ago, at {lock_at})")
+        else:
+            print(f"Unlocked the assignment")
+        print(f"Assignment URL: {api_url}courses/{canvas_course.id}/assignments/{canvas_assignment.id}")
+
+    except canvasapi.exceptions.CanvasException as ce:
+        printError("Couldn't post to Canvas: " + ce.message)
+
+
 def fn_canvas_new_announcement(args):
+
+    config = get_app_config()
 
     verbose = args.VERBOSE
     template_name = args.TEMPLATE
-
-    config = get_app_config()
 
     hw_info = lookupHWInfoFromAlias(args.ALIAS_OR_COURSE)
     if hw_info is None:
@@ -243,11 +318,6 @@ def fn_canvas_new_announcement(args):
                 optional_date = datetime.datetime.combine(optional_date.date(), datetime.time(23, 59, 0))
             except:
                 pass
-    template_name = args.TEMPLATE
-
-    verbose = args.VERBOSE
-
-    config = get_app_config()
 
     # Get the file path to the templates (both title and message/body)
     api_url, course_obj, fp_title_template, fp_message_template = config.verify_keys([
@@ -289,7 +359,7 @@ def fn_canvas_new_announcement(args):
 
     message_template = env.from_string(sz_message_template)
 
-    print("Search for the course in Canvas:")
+    print("Searching for the course in Canvas:")
     sz_re_quarter = ".*"
     matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
 
