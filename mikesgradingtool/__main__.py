@@ -214,8 +214,8 @@ def CLI():
                                                                 help=f'Post a new announcement for a particular course')
         parser_canvas_new_announcement.add_argument('ALIAS_OR_COURSE',
                                                help='Alias for course + assignment, or the name of the course (e.g., 142)')
-        parser_canvas_new_announcement.add_argument('TEMPLATE',
-                                               help='The name of the announcement template to use')
+        parser_canvas_new_announcement.add_argument('TEMPLATE', nargs='?', default='',
+                                               help='The name of the announcement template to use (Optional)')
         parser_canvas_new_announcement.add_argument('-d', '--DATE', help='Date (if the template needs it)in YYYY-MM-DD-HH-MM or YYYY-MM-DD (11:50pm assumed) formatd')
         parser_canvas_new_announcement.add_argument('-v', '--VERBOSE', action='store_true', default=False, help='Show extra info (verbose)')
         parser_canvas_new_announcement.set_defaults(func=CanvasHelper.fn_canvas_new_announcement)

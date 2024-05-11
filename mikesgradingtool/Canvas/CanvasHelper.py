@@ -213,12 +213,25 @@ def fn_canvas_autograde(args):
 
 def fn_canvas_new_announcement(args):
 
+    verbose = args.VERBOSE
+    template_name = args.TEMPLATE
+
+    config = get_app_config()
+
     hw_info = lookupHWInfoFromAlias(args.ALIAS_OR_COURSE)
     if hw_info is None:
-        printError(f"Couldn't find an alias for {args.ALIAS_OR_COURSE}")
-        course_name = args.ALIAS_OR_COURSE
-    else:
+        if template_name == "":
+            raise GradingToolError(f"Couldn't find an alias for {args.ALIAS_OR_COURSE} so we're assuming that's the course name, and no template was specified, so we don't know what to Announce for this course")
+        else:
+            print(f"Couldn't find an alias for {args.ALIAS_OR_COURSE}, using {args.ALIAS_OR_COURSE} as the course")
+            course_name = args.ALIAS_OR_COURSE
+    else: # found hw_info
         course_name = hw_info.course
+
+        if args.TEMPLATE == "": # prefer CLI args over the default
+            template_name = config.getKey(f"courses/{course_name}/assignments/{hw_info.hw}/default_announcement_template", "")
+            if template_name == "":
+                raise GradingToolError("No template specified for this assignment: Couldn't find a default_announcement_template key in gradingtool.json, nor a command line paramater")
 
     optional_date = None
     if args.DATE is not None:
