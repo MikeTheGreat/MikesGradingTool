@@ -301,12 +301,21 @@ def fn_canvas_post_assignment_grades(args):
 
 def fn_canvas_lock_assignment(args):
     verbose = args.VERBOSE
-
     lock = args.UNLOCK
+
+    config = get_app_config()
+    zoneName = config.getKey(f"app-wide_config/preferred_time_zone", "")
+    if zoneName == "":
+        printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
+        return
+    local_time_zone = pytz.timezone(zoneName)
+
     if lock:
         # Calculate the time 30 minutes before the current time for the locking time
         # This will effectively lock it now, and it's early enough that there's no risk of clocks being off slightly
-        lock_at = (datetime.datetime.now() - datetime.timedelta(minutes=30)).isoformat()
+        lock_at = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=30))
+        lock_at = lock_at.isoformat()
+
         msg_success = f"Locked the assignment (starting 30 mintues ago, at {lock_at})"
     else:
         lock_at = ''
