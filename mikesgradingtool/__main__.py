@@ -260,16 +260,17 @@ def CLI():
                                             help='The directory that contains the feedback files to upload')
         parser_canvas_package_.set_defaults(func=CanvasHelper.fn_canvas_package_feedback_for_upload)
 
-        parser_canvas_post_assignment_grades = canvas_subparsers.add_parser('post_assignment_grade',
-                                                                aliases=['p'],
-                                                                help=f'Lock (or unlock) an assignment to prevent (allow) homework uploads.  Does not prevent students from attaching files to Canvas comments on their submission, sadly')
-        parser_canvas_post_assignment_grades.add_argument('ALIAS_OR_COURSE',
-                                               help='Alias for course + assignment, or the name of the course (e.g., 142)')
-        parser_canvas_post_assignment_grades.add_argument('HOMEWORK_NAME', nargs='?', default='',
-                                               help='The name of the homework assignment (Optional - for when alias isn\'t used)')
-        parser_canvas_post_assignment_grades.add_argument('-i', '--HIDE', action='store_true', help='Hide the assignment\'s grades (when missing, this defaults to "show the assignment\'s grades to the students")')
-        parser_canvas_post_assignment_grades.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
-        parser_canvas_post_assignment_grades.set_defaults(func=CanvasHelper.fn_canvas_post_assignment_grades)
+        # Doesn't work, so I'm removing it from the UI.  Temporarily, hopefully
+        # parser_canvas_post_assignment_grades = canvas_subparsers.add_parser('post_assignment_grade',
+        #                                                         aliases=['p'],
+        #                                                         help=f'Lock (or unlock) an assignment to prevent (allow) homework uploads.  Does not prevent students from attaching files to Canvas comments on their submission, sadly')
+        # parser_canvas_post_assignment_grades.add_argument('ALIAS_OR_COURSE',
+        #                                        help='Alias for course + assignment, or the name of the course (e.g., 142)')
+        # parser_canvas_post_assignment_grades.add_argument('HOMEWORK_NAME', nargs='?', default='',
+        #                                        help='The name of the homework assignment (Optional - for when alias isn\'t used)')
+        # parser_canvas_post_assignment_grades.add_argument('-i', '--HIDE', action='store_true', help='Hide the assignment\'s grades (when missing, this defaults to "show the assignment\'s grades to the students")')
+        # parser_canvas_post_assignment_grades.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
+        # parser_canvas_post_assignment_grades.set_defaults(func=CanvasHelper.fn_canvas_post_assignment_grades)
 
         parser_canvas_org = canvas_subparsers.add_parser('revisions',
                                                  aliases=['r'],

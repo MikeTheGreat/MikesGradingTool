@@ -278,6 +278,11 @@ def fn_canvas_set_assignment_due_date(args):
     edit_course(args.ALIAS_OR_COURSE, args.HOMEWORK_NAME, verbose, assignment, msg_success)
 
 
+# Doesn't work, so I'm removing it from the UI.  Temporarily, hopefully
+# The issue is that 'hide_in_gradebook' doesn't work.  Setting it to false doesn't make the assignment visible
+# and setting it to true provokes an error message from Canvas saying that
+# "Hide in gradebook must be equal to false, Hide in gradebook is not included in the list"
+# It's not clear what the list is
 def fn_canvas_post_assignment_grades(args):
     verbose = args.VERBOSE
 
@@ -289,12 +294,12 @@ def fn_canvas_post_assignment_grades(args):
         print(f"Showing grades (in the gradebook) for an assignment")
         msg_success = f"SHOWN: Assignment grades ARE visible to the students in the Canvas gradebook"
 
-    assignment = {'hide_in_gradebook': hide}
+    assignment = {'hide_in_gradebook': hide} # didn't work
+    #assignment = {'muted': hide} # Also didn't work
 
     edit_course(args.ALIAS_OR_COURSE, args.HOMEWORK_NAME, verbose, assignment, msg_success)
 
 def fn_canvas_lock_assignment(args):
-
     verbose = args.VERBOSE
 
     lock = args.UNLOCK
@@ -328,7 +333,7 @@ def edit_course(alias_or_course, homework_name, verbose, dict_assignment_edits, 
     canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
 
     try:
-        canvas_assignment.edit(assignment=dict_assignment_edits)
+        result = canvas_assignment.edit(assignment=dict_assignment_edits)
         print(msg_success)
 
     except canvasapi.exceptions.CanvasException as ce:
