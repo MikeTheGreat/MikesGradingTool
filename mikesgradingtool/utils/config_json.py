@@ -268,16 +268,18 @@ def merge_CaseInsensitiveDicts(src, dest):
                 pass  # same leaf value
             else:
                 # replace key with src value (for non-dictionary elements)
-                dest[key] = src[key]
+                dest[key] = copy.deepcopy(src[key])
                 # Uncomment this to throw an exception, instead of replacing:
                 # raise Exception('Conflict at %s' % '.'.join(path + [str(key)]))
         else:
-            dest[key] = src[key]
+            dest[key] = copy.deepcopy(src[key])
     return dest
 
 def mergeBaseCourseIntoNewCourse(json_config_courses, base_course, course):
     if SZ_COURSE_TO_INHERIT_FROM in base_course:
-        base_course = merge_CaseInsensitiveDicts(json_config_courses[base_course[SZ_COURSE_TO_INHERIT_FROM]], base_course)
+        base_course = mergeBaseCourseIntoNewCourse(json_config_courses, \
+                                                   json_config_courses[base_course[SZ_COURSE_TO_INHERIT_FROM]], \
+                                                   base_course)
     else:
         base_course = copy.deepcopy(base_course)
 
