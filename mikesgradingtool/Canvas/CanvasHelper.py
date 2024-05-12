@@ -311,6 +311,7 @@ def fn_canvas_lock_assignment(args):
     local_time_zone = pytz.timezone(zoneName)
 
     if lock:
+        print("Locking assignment")
         # Calculate the time 30 minutes before the current time for the locking time
         # This will effectively lock it now, and it's early enough that there's no risk of clocks being off slightly
         lock_at = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=30))
@@ -318,6 +319,7 @@ def fn_canvas_lock_assignment(args):
 
         msg_success = f"Locked the assignment (starting 30 mintues ago, at {lock_at})"
     else:
+        print("Unlocking assignment")
         lock_at = ''
         msg_success = f"Unlocked the assignment"
 
@@ -340,6 +342,8 @@ def edit_course(alias_or_course, homework_name, verbose, dict_assignment_edits, 
         hw_name = homework_name
 
     canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
+
+    print(f"\tFound \"{canvas_assignment.name}\" in \"{canvas_course.name}\"")
 
     try:
         result = canvas_assignment.edit(assignment=dict_assignment_edits)
@@ -371,7 +375,7 @@ def fn_canvas_new_announcement(args):
             if template_name == "":
                 raise GradingToolError("No template specified for this assignment: Couldn't find a default_announcement_template key in gradingtool.json, nor a command line paramater")
 
-    print(f"Posting new announcement for course {course_name}")
+    print(f"Posting new announcement for course {course_name} using template {template_name}")
 
     optional_date = parse_datetime_with_or_without_time(args.DATE)
 
@@ -466,7 +470,7 @@ def fn_canvas_new_announcement(args):
         printError(f"The template used a variable that wasn't defined: {ue.message}")
         print("data:")
         pp.pprint(data)
-        sys.exit(-1)
+        raise GradingToolError(f"The template used a variable that wasn't defined: {ue.message}")
 
     try:
         result = the_course.create_discussion_topic(title=title_rendered, message=message_rendered, is_announcement=True)
