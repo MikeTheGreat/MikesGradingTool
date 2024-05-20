@@ -215,19 +215,9 @@ def get_canvas_course_and_assignment(course_name, hw_name, verbose):
     config = get_app_config()
 
     sz_re_quarter = ".*"
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
-
-    if len(matching_courses.items()) == 0:
-        printError(f"Couldn't find any courses matching {course_name}")
+    the_course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, verbose)
+    if the_course is None:
         return None, None
-
-    if len(matching_courses.items()) > 1:
-        printError(f"Found more than 1 course matching {course_name}")
-        for key, course in matching_courses.items():
-            print(f"\t{key}")
-        return None, None
-
-    the_course = (matching_courses.popitem()[1])[0]
 
     the_assignment = None
 
@@ -421,19 +411,9 @@ def fn_canvas_new_announcement(args):
 
     print("Searching for the course in Canvas:")
     sz_re_quarter = ".*"
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
-
-    if len(matching_courses.items()) == 0:
-        printError(f"Couldn't find any courses matching {course_name}")
+    the_course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, verbose)
+    if the_course is None:
         return
-
-    if len(matching_courses.items()) > 1:
-        printError(f"Found more than 1 course matching {course_name}")
-        for key, course in matching_courses.items():
-            print(f"\t{key}")
-        return
-
-    the_course = (matching_courses.popitem()[1])[0]
 
     ### TODO: GET DATA FOR THE COURSE & ASSIGNMENT (NAME, ETC)
     # Define data to pass into the template
@@ -1072,7 +1052,7 @@ def download_all(urls, verbose):
     futures_list = []
     results = []
 
-    with ThreadPoolExecutor(max_workers=13) as executor:
+    with ThreadPoolExecutor(max_workers=50) as executor:
         for url in urls:
             futures = executor.submit(download_one, url, verbose)
             futures_list.append(futures)
@@ -1097,7 +1077,7 @@ def download_all(urls, verbose):
 # As of 2023 Fall it looks like Canvas isn't reporting the start/end dates for the class anymore :(
 # So the user must specify a matching RegEx in the gradingTool.json file
 # and this will return the one match for the course
-def getMatchingCourses(config, course_name: str, sz_re_quarter:str, verbose):
+def getMatchingCourse(config, course_name: str, sz_re_quarter:str, verbose):
     api_url, api_key, sz_re_course = config.verify_keys([
         "canvas/api/url",
         "canvas/api/key",
@@ -1116,42 +1096,26 @@ def getMatchingCourses(config, course_name: str, sz_re_quarter:str, verbose):
         print(f"= Getting information from Canvas:")
         print("\tSearching for target course in the list of all courses")
 
-    courses = list(curuser.get_courses(enrollment_type='teacher',
+    # Get CanvasAPI.PaginatedList, which will lazy-load individual courses:
+    courses = curuser.get_courses(enrollment_type='teacher',
                                        state=['unpublished', 'available'],
-                                       include=['term']))  # 'include': ['term', 'concluded']
+                                       include=['term'])  # 'include': ['term', 'concluded']
 
-    # courses = list(filter(is_current_course, courses))
+    matching_course = None
+    for course in courses:
+        if hasattr(course, 'name') \
+                and re.search(sz_re_course, course.name) \
+                and re.search(sz_re_quarter, course.name):
+            if verbose:
+                print("\tFound \"" + course.name + "\", whose named matched the pattern " + sz_re_course)
+            matching_course = course
+            break
 
-    courses_to_look_for = [
-        sz_re_course
-    ]
+    if matching_course is None:
+        printError("\nNo matching course names for the pattern\n" + course_name)
+        print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
 
-    # create lookup table in case we get duplicate course matches
-    matching_courses = {pattern: list() for pattern in courses_to_look_for}
-
-    # closure: if course is in list, then add it to matching_courses dict
-    def is_course_in_list(course_maybe):
-        # print( "- " + course_maybe.name)
-        # if is_current_course(course_maybe):
-            for pattern in courses_to_look_for:
-                if hasattr(course_maybe, 'name') \
-                        and re.search(pattern, course_maybe.name) \
-                        and re.search(sz_re_quarter, course_maybe.name):
-                    if verbose:
-                        print("\tFound \"" + course_maybe.name + "\", whose named matched the pattern " + pattern)
-                    matching_courses[pattern].append(course_maybe)
-
-    # the list function forces map to be applied to the list (???)
-    list(map(is_course_in_list, courses))
-
-    # go through and order courses from newest to oldest:
-    for list_of_courses in matching_courses.values():
-        if len(list_of_courses) > 1:
-            list_of_courses.sort(key=course_key_timestamp, reverse=True)
-
-    # theMatches = matching_courses.items()
-
-    return matching_courses, canvas
+    return matching_course, canvas
 
 foundMatchingAssignment = False
 
@@ -1167,174 +1131,168 @@ def do_fnx_per_matching_submission(course_name, sz_re_quarter, hw_name, dest_dir
 
     config = get_app_config()
 
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, results_lists.verbose)
+    course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, results_lists.verbose)
+    if course is None:
+        return
 
-    for key, course in matching_courses.items():
-        if len(course) == 0:
-            print("\nNo matching course names for the pattern\n" + key)
-            print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
+    if results_lists.verbose:
+        print(f"\tGetting Users for \"{course.name}\"")
+
+    users_lookup = dict()
+    users = course.get_users(enrollment_type=['student'])
+    for user in users:
+        users_lookup[user.id] = user
+
+    assignment_name = config.getKey(f"courses/{course_name}/assignments/{hw_name}/canvas_api/canvas_name")
+
+    if results_lists.verbose:
+        print(f"\tGetting Assignments for \"{course.name}\"")
+
+    # Get all assignments:
+    assignments = course.get_assignments()
+    assign_lookup = dict()
+
+    for assign in assignments:
+        assign_lookup[assign.id] = assign
+
+        if assign.name != assignment_name:
             continue
 
-        course = course[0]
+        global foundMatchingAssignment
+        foundMatchingAssignment = True  # We've found it, although there may be zero submissions/uploads to download
+
+        if not assign.has_submitted_submissions:
+            # Error message printed elsewhere
+            return
+
+        global foundSubmissions
+        foundSubmissions = True
 
         if results_lists.verbose:
-            print(f"\tGetting Users for \"{course.name}\"")
+            print(f"\tGetting Submissions for \"{assign.name}\"")
+        else: # don't indent, and show more info (pretty much the only info we'll show here in concise mode)
+            print(f"Getting Submissions for \"{assign.name}\" in \"{course.name}\"")
+        dest_dir = None
+        if dir_required:
+            if hw_name != 'all' and dest_dir_from_cmd_line is not None:
+                dest_dir = dest_dir_from_cmd_line
+            else:
+                dest_dir = config.getKey(f"courses/{course_name}/assignments/{hw_name}/dest_dir")
 
-        users_lookup = dict()
-        users = course.get_users(enrollment_type=['student'])
-        for user in users:
-            users_lookup[user.id] = user
+        if assign.group_category_id is None:
+            if results_lists.verbose:
+                print("\tThis is NOT a group assignment")
+        else:
+            try:
+                group_category = canvas.get_group_category(assign.group_category_id)
+                if results_lists.verbose:
+                    print(f"\tThis assignment is a group assignment, using group \"{group_category.name}\"")
 
-        assignment_name = config.getKey(f"courses/{course_name}/assignments/{hw_name}/canvas_api/canvas_name")
+                for group in group_category.get_groups():
+                    # print(f"\tGroup: {group.name}")
+
+                    # Reset the 'Group Members' file
+                    safe_name = format_filename(group.name)
+                    group_dest_dir = os.path.join(dest_dir, safe_name)
+                    os.makedirs(group_dest_dir, exist_ok=True)
+                    with open(os.path.join(group_dest_dir, "GROUP_MEMBERS.txt"), "w", encoding="utf-8") as myfile:
+                        pass
+
+                    for user in group.get_users():
+                        obj_user = users_lookup[user.id]
+                        # print(f"\t\t{obj_user.name}")
+                        users_lookup[user.id].attributes["group"] = group
+            except canvasapi.exceptions.ResourceDoesNotExist as e:
+                printError(f"*** This assignment is a group assignment, but the group-set that was used can't be found (was it deleted after students handed in work?)***")
 
         if results_lists.verbose:
-            print(f"\tGetting Assignments for \"{course.name}\"")
+            print(f"\n= {msg_to_display}:")
+            print(" ") # blank, spacer line
 
-        # Get all assignments:
-        assignments = course.get_assignments()
-        assign_lookup = dict()
+        # https://canvasapi.readthedocs.io/en/latest/assignment-ref.html#canvasapi.assignment.Assignment.get_submissions
+        submissions = assign.get_submissions(include=["submission_history"])
 
-        for assign in assignments:
-            assign_lookup[assign.id] = assign
+        stop_early = 2
 
-            if assign.name != assignment_name:
+        for sub in submissions:
+            # print("\nNEXT SUBMISSION: ==================================================")
+
+            if sub.user_id not in users_lookup:
+
+                # Concise mode: only print info when it looks like there was something submitted
+                if results_lists.verbose or \
+                        (not results_lists.verbose and (not sub.missing or \
+                        sub.workflow_state != "unsubmitted" \
+                        or sub.submitted_at is not None)):
+                    print(f"\tUnknown user id ({sub.user_id}) - skipping submission ".ljust(60, "-"))
+                    if obj_user is not None:
+                        print(f"\t\tobj_user.name: \"{obj_user.name}\"")
+                    print(f"\t\tworkflow_state: \"{sub.workflow_state}\" | Missing? {sub.missing} | submitted_at: {sub.submitted_at}")
+
+                # Regardless, we don't have user info, so go on to the next student
                 continue
 
-            global foundMatchingAssignment
-            foundMatchingAssignment = True  # We've found it, although there may be zero submissions/uploads to download
+            obj_user = users_lookup[sub.user_id]
+            capped = string.capwords(obj_user.name)
+            firstname = capped.split()[0].strip()
+            lastname = capped.split()[-1].strip()
 
-            if not assign.has_submitted_submissions:
-                # Error message printed elsewhere
-                return
+            # Students are allowed to put in nicknames, which show up at the end of the string:
+            # "Smith, Robert (Bob)"
+            if len(lastname) > 2 and lastname[0] == '(' and lastname[-1] == ')':
+                lastname = capped.split()[-2].strip()
 
-            global foundSubmissions
-            foundSubmissions = True
+            # Repair the user object so that anything else looking for first & last names
+            # will get the correct strings:
+            obj_user.name = obj_user.short_name = firstname + ' ' + lastname
+            obj_user.sortable_name = lastname + ', ' + firstname
+
+            group = None
+            if hasattr(obj_user, 'attributes') and 'group' in obj_user.attributes and obj_user.attributes["group"] is not None:
+                group = obj_user.attributes['group']
 
             if results_lists.verbose:
-                print(f"\tGetting Submissions for \"{assign.name}\"")
-            else: # don't indent, and show more info (pretty much the only info we'll show here in concise mode)
-                print(f"Getting Submissions for \"{assign.name}\" in \"{course.name}\"")
-            dest_dir = None
-            if dir_required:
-                if hw_name != 'all' and dest_dir_from_cmd_line is not None:
-                    dest_dir = dest_dir_from_cmd_line
+                if group is None:
+                    print(f"\t{lastname}, {firstname} ".ljust(60, "-") )
                 else:
-                    dest_dir = config.getKey(f"courses/{course_name}/assignments/{hw_name}/dest_dir")
+                    print(f"\t{group.name} == ({lastname}, {firstname}) ".ljust(60, "-"))
 
-            if assign.group_category_id is None:
+            # Is Canvas telling us about an empty "submission" (i.e., student didn't hand in any work)?
+            if sub.missing or sub.submitted_at is None:
+                # len(sub.submission_history) == 1 and "submitted_at" not in sub.submission_history[0]:
                 if results_lists.verbose:
-                    print("\tThis is NOT a group assignment")
+                    print("\t\tNo work uploaded")
+
+                results_lists.no_submission.append(f"{lastname}, {firstname}")
+                continue
+
+            if sub.assignment_id not in assign_lookup:
+                print(f"\t\tUnknown assignment id encountered - skipping submission! ID = {sub.assignment_id}")
+                continue
+
+            obj_assign = assign_lookup[sub.assignment_id]
+
+            # If student is part of a group then put in group folder
+            if group is not None:
+                safe_name = format_filename(group.name)
+                sub_dest_dir = os.path.join(dest_dir, safe_name)
+                with open(os.path.join(sub_dest_dir,"GROUP_MEMBERS.txt"), "a", encoding="utf-8") as myfile:
+                    myfile.write(obj_user.name + "\n")
+
+            # Otherwise, put it into a folder for this particular student
             else:
-                try:
-                    group_category = canvas.get_group_category(assign.group_category_id)
-                    if results_lists.verbose:
-                        print(f"\tThis assignment is a group assignment, using group \"{group_category.name}\"")
-
-                    for group in group_category.get_groups():
-                        # print(f"\tGroup: {group.name}")
-
-                        # Reset the 'Group Members' file
-                        safe_name = format_filename(group.name)
-                        group_dest_dir = os.path.join(dest_dir, safe_name)
-                        os.makedirs(group_dest_dir, exist_ok=True)
-                        with open(os.path.join(group_dest_dir, "GROUP_MEMBERS.txt"), "w", encoding="utf-8") as myfile:
-                            pass
-
-                        for user in group.get_users():
-                            obj_user = users_lookup[user.id]
-                            # print(f"\t\t{obj_user.name}")
-                            users_lookup[user.id].attributes["group"] = group
-                except canvasapi.exceptions.ResourceDoesNotExist as e:
-                    printError(f"*** This assignment is a group assignment, but the group-set that was used can't be found (was it deleted after students handed in work?)***")
-
-            if results_lists.verbose:
-                print(f"\n= {msg_to_display}:")
-                print(" ") # blank, spacer line
-
-            # https://canvasapi.readthedocs.io/en/latest/assignment-ref.html#canvasapi.assignment.Assignment.get_submissions
-            submissions = assign.get_submissions(include=["submission_history"])
-
-            stop_early = 2
-
-            for sub in submissions:
-                # print("\nNEXT SUBMISSION: ==================================================")
-
-                if sub.user_id not in users_lookup:
-
-                    # Concise mode: only print info when it looks like there was something submitted
-                    if results_lists.verbose or \
-                            (not results_lists.verbose and (not sub.missing or \
-                            sub.workflow_state != "unsubmitted" \
-                            or sub.submitted_at is not None)):
-                        print(f"\tUnknown user id ({sub.user_id}) - skipping submission ".ljust(60, "-"))
-                        if obj_user is not None:
-                            print(f"\t\tobj_user.name: \"{obj_user.name}\"")
-                        print(f"\t\tworkflow_state: \"{sub.workflow_state}\" | Missing? {sub.missing} | submitted_at: {sub.submitted_at}")
-
-                    # Regardless, we don't have user info, so go on to the next student
-                    continue
-
-                obj_user = users_lookup[sub.user_id]
-                capped = string.capwords(obj_user.name)
-                firstname = capped.split()[0].strip()
-                lastname = capped.split()[-1].strip()
-
-                # Students are allowed to put in nicknames, which show up at the end of the string:
-                # "Smith, Robert (Bob)"
-                if len(lastname) > 2 and lastname[0] == '(' and lastname[-1] == ')':
-                    lastname = capped.split()[-2].strip()
-
-                # Repair the user object so that anything else looking for first & last names
-                # will get the correct strings:
-                obj_user.name = obj_user.short_name = firstname + ' ' + lastname
-                obj_user.sortable_name = lastname + ', ' + firstname
-
-                group = None
-                if hasattr(obj_user, 'attributes') and 'group' in obj_user.attributes and obj_user.attributes["group"] is not None:
-                    group = obj_user.attributes['group']
-
-                if results_lists.verbose:
-                    if group is None:
-                        print(f"\t{lastname}, {firstname} ".ljust(60, "-") )
-                    else:
-                        print(f"\t{group.name} == ({lastname}, {firstname}) ".ljust(60, "-"))
-
-                # Is Canvas telling us about an empty "submission" (i.e., student didn't hand in any work)?
-                if sub.missing or sub.submitted_at is None:
-                    # len(sub.submission_history) == 1 and "submitted_at" not in sub.submission_history[0]:
-                    if results_lists.verbose:
-                        print("\t\tNo work uploaded")
-
-                    results_lists.no_submission.append(f"{lastname}, {firstname}")
-                    continue
-
-                if sub.assignment_id not in assign_lookup:
-                    print(f"\t\tUnknown assignment id encountered - skipping submission! ID = {sub.assignment_id}")
-                    continue
-
-                obj_assign = assign_lookup[sub.assignment_id]
-
-                # If student is part of a group then put in group folder
-                if group is not None:
-                    safe_name = format_filename(group.name)
-                    sub_dest_dir = os.path.join(dest_dir, safe_name)
-                    with open(os.path.join(sub_dest_dir,"GROUP_MEMBERS.txt"), "a", encoding="utf-8") as myfile:
-                        myfile.write(obj_user.name + "\n")
-
-                # Otherwise, put it into a folder for this particular student
-                else:
-                    # Now add the student's name onto the end
-                    # Format like the organized .ZIP downloads:
-                    sub_dest_dir = os.path.join(dest_dir, name_to_last_first(obj_user.name) + '_' + str(obj_user.id) + '_FROM_CANVAS')
+                # Now add the student's name onto the end
+                # Format like the organized .ZIP downloads:
+                sub_dest_dir = os.path.join(dest_dir, name_to_last_first(obj_user.name) + '_' + str(obj_user.id) + '_FROM_CANVAS')
 
 
-                fnx(sub, obj_user, obj_assign, sub_dest_dir, results_lists)
+            fnx(sub, obj_user, obj_assign, sub_dest_dir, results_lists)
 
-                # break # uncomment to stop after a downloading a single student
-                #
-                # # uncomment to stop after stop_early students
-                # if stop_early  <= 1: break
-                # stop_early = stop_early - 1
+            # break # uncomment to stop after a downloading a single student
+            #
+            # # uncomment to stop after stop_early students
+            # if stop_early  <= 1: break
+            # stop_early = stop_early - 1
 
 def fn_canvas_download_homework(args):
 
@@ -1739,27 +1697,9 @@ def fn_canvas_set_due_dates(args):
     # Go through all the assignments in Canvas, via the CanvasAPI:
     print("Go through all the assignments in Canvas, via the CanvasAPI:")
     sz_re_quarter = ".*"
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
-
-    if len(matching_courses.items()) == 0:
-        printError(f"Couldn't find any courses matching {course_name}")
+    course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, verbose)
+    if course is None:
         return
-
-    if len(matching_courses.items()) > 1:
-        printError(f"Found more than 1 course matching {course_name}")
-        for key, course in matching_courses.items():
-            print(f"\t{key}")
-        return
-
-    # Get the first item in the list:
-    # https://stackoverflow.com/a/39292086/250610
-    course_name, course = next(iter(matching_courses.items()))
-    if len(course) == 0:
-        print("\nNo matching course names for the pattern\n" + course_name)
-        print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
-        return
-
-    course = course[0]
 
     # if verbose:
     print(f"Getting Assignments for \"{course.name}\"")
