@@ -38,6 +38,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
+from mikesgradingtool.utils.diskcache_utils import get_app_cache
 from mikesgradingtool.utils.misc_utils import grade_list_collector
 from mikesgradingtool.MiscFiles import MiscFilesHelper
 from mikesgradingtool.MiscFiles.MiscFilesHelper import autograder_common_actions
@@ -47,6 +48,8 @@ from mikesgradingtool.utils.misc_utils import cd, format_filename, is_file_locke
 from mikesgradingtool.utils.my_logging import get_logger
 from mikesgradingtool.utils.print_utils import GradingToolError, print_list, printError
 
+# cache expiration in seconds - 11 weeks
+APP_CACHE_EXPIRATION = 60*60*24*7*11
 
 #console = Console(color_system="truecolor", tab_size=4)
 console = Console(color_system="auto", tab_size=4)
@@ -211,29 +214,47 @@ def fn_canvas_autograde(args):
     #
     # autograder_common_actions(args, sz_glob_student_dir, fn_canvas_organize_files, fn_canvas_convert_dir_to_student_sub)
 
-def get_canvas_course_and_assignment(course_name, hw_name, verbose):
+# def get_canvas_course_and_assignment(course_name, hw_name, verbose):
+#     the_course, canvas = get_canvas_course(course_name, verbose)
+#     if the_course is None:
+#         return None, None
+#
+#     the_assignment = get_canvas_assignment(course_name, hw_name, the_course, verbose)
+#
+#     return the_course, the_assignment
+
+
+def get_canvas_assignment(course_json_abbrev, hw_name, the_course, verbose):
     config = get_app_config()
 
-    sz_re_quarter = ".*"
-    the_course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, verbose)
-    if the_course is None:
-        return None, None
-
     the_assignment = None
-
     assignment_name = config.getKey(
-        f"courses/{course_name}/assignments/{hw_name}/canvas_api/canvas_name", "")
+        f"courses/{course_json_abbrev}/assignments/{hw_name}/canvas_api/canvas_name", "")
     if assignment_name != "":
-        print("\tSearching for the assignment, within the course")
-        for assign in the_course.get_assignments():
+        persistent_app_cache = get_app_cache(verbose)
+        assign_cache_key = f"{the_course.id}:{assignment_name}"
+
+        if assign_cache_key in persistent_app_cache:
+            assign_id = persistent_app_cache.get(assign_cache_key)
+
+            assign = the_course.get_assignment(assign_id)
             if assign.name == assignment_name:
                 the_assignment = assign
-                break
+                if verbose:
+                    print(f"= Found cached Canvas ID for assignment {assign_id} (aka \"{assign.name}\")")
 
+        # If we didn't find a cached, valid match then go (re)find the Canvas ID for this assignment
+        if the_assignment is None:
+            print("\tSearching for the assignment, within the course")
+            for assign in the_course.get_assignments():
+                if assign.name == assignment_name:
+                    the_assignment = assign
+                    persistent_app_cache.set(assign_cache_key, the_assignment.id, expire=APP_CACHE_EXPIRATION)
+                    break
     if the_assignment is None:
-        printError(f"Couldn't find assignment matching {hw_name} in {course_name}")
+        printError(f"Couldn't find assignment matching {hw_name} in {course_json_abbrev}")
+    return the_assignment
 
-    return the_course, the_assignment
 
 def parse_datetime_with_or_without_time(sz):
     parsed_datetime = None
@@ -331,7 +352,13 @@ def edit_course(alias_or_course, homework_name, verbose, dict_assignment_edits, 
         course_name = alias_or_course
         hw_name = homework_name
 
-    canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
+#    canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
+    canvas_course, canvas = get_canvas_course(course_name, verbose)
+    if canvas_course is None:
+        return
+    canvas_assignment = get_canvas_assignment(course_name, hw_name, canvas_course, verbose)
+    if canvas_assignment is None:
+        return
 
     print(f"\tFound \"{canvas_assignment.name}\" in \"{canvas_course.name}\"")
 
@@ -410,12 +437,10 @@ def fn_canvas_new_announcement(args):
     message_template = env.from_string(sz_message_template)
 
     print("Searching for the course in Canvas:")
-    sz_re_quarter = ".*"
-    the_course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, verbose)
+    the_course, canvas = get_canvas_course(course_name, verbose)
     if the_course is None:
         return
 
-    ### TODO: GET DATA FOR THE COURSE & ASSIGNMENT (NAME, ETC)
     # Define data to pass into the template
     data = {
         'course': course_obj,
@@ -429,18 +454,11 @@ def fn_canvas_new_announcement(args):
         # We may need the Canvas ID of the Assignment (if we want to link to it)
         # so try to get it now
 
-        next_assignment_name = config.getKey(f"courses/{course_name}/assignments/{hw_info.next_version}/canvas_api/canvas_name", "")
+        next_assignment = get_canvas_assignment(course_name, hw_info.next_version, the_course, verbose)
 
-        if next_assignment_name != "":
-            # Get all assignments:
-            assignments = the_course.get_assignments()
-            next_assignment_url = None
-
-            for assign in assignments:
-                if assign.name == next_assignment_name:
-                    next_assignment_url = f"{api_url}courses/{the_course.id}/assignments/{assign.id}"
-                    data['next_assignment_url'] = next_assignment_url
-                    break
+        if next_assignment is not None:
+            next_assignment_url = f"{api_url}courses/{the_course.id}/assignments/{next_assignment.id}"
+            data['next_assignment_url'] = next_assignment_url
 
     try:
         # Render the template with the data
@@ -1077,7 +1095,8 @@ def download_all(urls, verbose):
 # As of 2023 Fall it looks like Canvas isn't reporting the start/end dates for the class anymore :(
 # So the user must specify a matching RegEx in the gradingTool.json file
 # and this will return the one match for the course
-def getMatchingCourse(config, course_name: str, sz_re_quarter:str, verbose):
+def get_canvas_course(course_name: str, verbose, sz_re_quarter: str = ".*"):
+    config = get_app_config()
     api_url, api_key, sz_re_course = config.verify_keys([
         "canvas/api/url",
         "canvas/api/key",
@@ -1092,28 +1111,48 @@ def getMatchingCourse(config, course_name: str, sz_re_quarter:str, verbose):
         printError("Unable to connect to the Canvas server - are we offline?")
         sys.exit(-1)
 
-    if verbose:
-        print(f"= Getting information from Canvas:")
-        print("\tSearching for target course in the list of all courses")
-
-    # Get CanvasAPI.PaginatedList, which will lazy-load individual courses:
-    courses = curuser.get_courses(enrollment_type='teacher',
-                                       state=['unpublished', 'available'],
-                                       include=['term'])  # 'include': ['term', 'concluded']
-
     matching_course = None
-    for course in courses:
-        if hasattr(course, 'name') \
-                and re.search(sz_re_course, course.name) \
-                and re.search(sz_re_quarter, course.name):
-            if verbose:
-                print("\tFound \"" + course.name + "\", whose named matched the pattern " + sz_re_course)
-            matching_course = course
-            break
+    persistent_app_cache = get_app_cache(verbose)
 
+    if sz_re_course in persistent_app_cache:
+        course_id= persistent_app_cache.get(sz_re_course)
+        course = canvas.get_course(course_id)
+
+        # Verify that we actually have the correct course
+        # (i.e., we're not in a new term with a re-used course name)
+        if hasattr(course, 'name') \
+            and re.search(sz_re_course, course.name) \
+            and re.search(sz_re_quarter, course.name):
+
+            matching_course = course
+            if verbose:
+                print(f"= Found cached Canvas ID for course {course_id} (aka \"{course.name}\")")
+
+    # If we didn't find a cached, valid match then go (re)find the Canvas ID for this course:
     if matching_course is None:
-        printError("\nNo matching course names for the pattern\n" + course_name)
-        print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
+        if verbose:
+            print(f"= Getting information from Canvas:")
+            print("\tSearching for target course in the list of all courses")
+
+        # Get CanvasAPI.PaginatedList, which will lazy-load individual courses:
+        courses = curuser.get_courses(enrollment_type='teacher',
+                                           state=['unpublished', 'available'],
+                                           include=['term'])  # 'include': ['term', 'concluded']
+
+        for course in courses:
+            if hasattr(course, 'name') \
+                    and re.search(sz_re_course, course.name) \
+                    and re.search(sz_re_quarter, course.name):
+                if verbose:
+                    print("\tFound \"" + course.name + "\", whose named matched the pattern " + sz_re_course)
+                matching_course = course
+                break
+
+        if matching_course is None:
+            printError("\nNo matching course names for the pattern\n" + course_name)
+            print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
+
+        persistent_app_cache.set(sz_re_course, matching_course.id, expire=APP_CACHE_EXPIRATION)
 
     return matching_course, canvas
 
@@ -1131,7 +1170,7 @@ def do_fnx_per_matching_submission(course_name, sz_re_quarter, hw_name, dest_dir
 
     config = get_app_config()
 
-    course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, results_lists.verbose)
+    course, canvas = get_canvas_course(course_name, results_lists.verbose, sz_re_quarter)
     if course is None:
         return
 
@@ -1603,9 +1642,16 @@ NO_DUE_DATE_MARKER_STRING = "gradingTool.json specified 'NO_DUE_DATE' for this i
 def fn_canvas_set_due_dates(args):
     course_name = args.COURSE
     hw_name = args.HOMEWORK_NAME
-    verbose = False
+    verbose = args.VERBOSE
 
     config = get_app_config()
+
+    is_json_course_found = config.getKey(f"courses/{course_name}", "")
+    if is_json_course_found == "":
+        printError(f"Could not find course info in JSON config file for \"{course_name}\"")
+        print(f"\tIs \"{course_name}\"  an alias (like 2a4, or 3i11, etc)?")
+        return
+
 
     general_due_date_info = config.getKey(f"due_date_info", "")
     if general_due_date_info == "":
@@ -1696,8 +1742,7 @@ def fn_canvas_set_due_dates(args):
 
     # Go through all the assignments in Canvas, via the CanvasAPI:
     print("Go through all the assignments in Canvas, via the CanvasAPI:")
-    sz_re_quarter = ".*"
-    course, canvas = getMatchingCourse(config, course_name, sz_re_quarter, verbose)
+    course, canvas = get_canvas_course(course_name, verbose)
     if course is None:
         return
 

@@ -30,11 +30,11 @@ I
 # For constants like __app_name__ and __version:
 import mikesgradingtool
 import argparse
-import datetime
 import os
 import sys
 
 from mikesgradingtool.utils.config_json import get_app_config
+from mikesgradingtool.utils.diskcache_utils import close_app_cache
 from mikesgradingtool.utils.my_logging import get_logger
 from mikesgradingtool.utils.print_utils import GradingToolError, printError
 
@@ -251,6 +251,8 @@ def CLI():
                                                  help='The name of the homework assignment (to update only that assignment)')
         parser_canvas_set_due_dates.add_argument('-f', '--FIRST_DAY_OF_QUARTER', nargs='?', default='',
                                                  help='The first day of the quarter, in YYYY/MM/DD format (so Sept 27th, 2023 would be 2023/09/27)')
+        parser_canvas_set_due_dates.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
+
         parser_canvas_set_due_dates.set_defaults(func=CanvasHelper.fn_canvas_set_due_dates)
 
         parser_canvas_package_ = canvas_subparsers.add_parser('package',
@@ -360,6 +362,8 @@ def CLI():
     except GradingToolError as ex:
         printError(str(ex))
         sys.exit(-1)
+    finally:
+        close_app_cache()
 
     #
     # # Is it the same python interpreter?
