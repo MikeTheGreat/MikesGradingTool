@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mikesgradingtool"
-version = "0.1.1"
+version = "0.1.2"
 description = ""
 authors = ["Mike Panitz <mike.panitz@gmail.com>"]
 readme = "README.md"
@@ -17,6 +17,7 @@ keyboard = "^0.13.5"
 rich = "^13.7.1"
 jinja2 = "^3.1.3"
 setuptools = "^69.5.1"
+diskcache = "^5.6.3"
 
 [tool.poetry.scripts]
 mikesgradingtool = "mikesgradingtool.__main__:CLI"

@@ -38,6 +38,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
+from mikesgradingtool.utils.diskcache_utils import get_app_cache
 from mikesgradingtool.utils.misc_utils import grade_list_collector
 from mikesgradingtool.MiscFiles import MiscFilesHelper
 from mikesgradingtool.MiscFiles.MiscFilesHelper import autograder_common_actions
@@ -47,6 +48,8 @@ from mikesgradingtool.utils.misc_utils import cd, format_filename, is_file_locke
 from mikesgradingtool.utils.my_logging import get_logger
 from mikesgradingtool.utils.print_utils import GradingToolError, print_list, printError
 
+# cache expiration in seconds - 11 weeks
+APP_CACHE_EXPIRATION = 60*60*24*7*11
 
 #console = Console(color_system="truecolor", tab_size=4)
 console = Console(color_system="auto", tab_size=4)
@@ -211,39 +214,47 @@ def fn_canvas_autograde(args):
     #
     # autograder_common_actions(args, sz_glob_student_dir, fn_canvas_organize_files, fn_canvas_convert_dir_to_student_sub)
 
-def get_canvas_course_and_assignment(course_name, hw_name, verbose):
+# def get_canvas_course_and_assignment(course_name, hw_name, verbose):
+#     the_course, canvas = get_canvas_course(course_name, verbose)
+#     if the_course is None:
+#         return None, None
+#
+#     the_assignment = get_canvas_assignment(course_name, hw_name, the_course, verbose)
+#
+#     return the_course, the_assignment
+
+
+def get_canvas_assignment(course_json_abbrev, hw_name, the_course, verbose, print_error_if_not_found:bool = True):
     config = get_app_config()
 
-    sz_re_quarter = ".*"
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
-
-    if len(matching_courses.items()) == 0:
-        printError(f"Couldn't find any courses matching {course_name}")
-        return None, None
-
-    if len(matching_courses.items()) > 1:
-        printError(f"Found more than 1 course matching {course_name}")
-        for key, course in matching_courses.items():
-            print(f"\t{key}")
-        return None, None
-
-    the_course = (matching_courses.popitem()[1])[0]
-
     the_assignment = None
-
     assignment_name = config.getKey(
-        f"courses/{course_name}/assignments/{hw_name}/canvas_api/canvas_name", "")
+        f"courses/{course_json_abbrev}/assignments/{hw_name}/canvas_api/canvas_name", "")
     if assignment_name != "":
-        print("\tSearching for the assignment, within the course")
-        for assign in the_course.get_assignments():
+        persistent_app_cache = get_app_cache(verbose)
+        assign_cache_key = f"{the_course.id}:{assignment_name}"
+
+        if assign_cache_key in persistent_app_cache:
+            assign_id = persistent_app_cache.get(assign_cache_key)
+
+            assign = the_course.get_assignment(assign_id)
             if assign.name == assignment_name:
                 the_assignment = assign
-                break
+                if verbose:
+                    print(f"= Found cached Canvas ID for assignment {assign_id} (aka \"{assign.name}\")")
 
-    if the_assignment is None:
-        printError(f"Couldn't find assignment matching {hw_name} in {course_name}")
+        # If we didn't find a cached, valid match then go (re)find the Canvas ID for this assignment
+        if the_assignment is None:
+            print("\tSearching for the assignment, within the course")
+            for assign in the_course.get_assignments():
+                if assign.name == assignment_name:
+                    the_assignment = assign
+                    persistent_app_cache.set(assign_cache_key, the_assignment.id, expire=APP_CACHE_EXPIRATION)
+                    break
+    if print_error_if_not_found and the_assignment is None:
+        printError(f"Couldn't find assignment matching {hw_name} in {course_json_abbrev}")
+    return the_assignment
 
-    return the_course, the_assignment
 
 def parse_datetime_with_or_without_time(sz):
     parsed_datetime = None
@@ -341,7 +352,13 @@ def edit_course(alias_or_course, homework_name, verbose, dict_assignment_edits, 
         course_name = alias_or_course
         hw_name = homework_name
 
-    canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
+#    canvas_course, canvas_assignment = get_canvas_course_and_assignment(course_name, hw_name, verbose)
+    canvas_course, canvas = get_canvas_course(course_name, verbose)
+    if canvas_course is None:
+        return
+    canvas_assignment = get_canvas_assignment(course_name, hw_name, canvas_course, verbose)
+    if canvas_assignment is None:
+        return
 
     print(f"\tFound \"{canvas_assignment.name}\" in \"{canvas_course.name}\"")
 
@@ -420,22 +437,10 @@ def fn_canvas_new_announcement(args):
     message_template = env.from_string(sz_message_template)
 
     print("Searching for the course in Canvas:")
-    sz_re_quarter = ".*"
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
-
-    if len(matching_courses.items()) == 0:
-        printError(f"Couldn't find any courses matching {course_name}")
+    the_course, canvas = get_canvas_course(course_name, verbose)
+    if the_course is None:
         return
 
-    if len(matching_courses.items()) > 1:
-        printError(f"Found more than 1 course matching {course_name}")
-        for key, course in matching_courses.items():
-            print(f"\t{key}")
-        return
-
-    the_course = (matching_courses.popitem()[1])[0]
-
-    ### TODO: GET DATA FOR THE COURSE & ASSIGNMENT (NAME, ETC)
     # Define data to pass into the template
     data = {
         'course': course_obj,
@@ -449,18 +454,12 @@ def fn_canvas_new_announcement(args):
         # We may need the Canvas ID of the Assignment (if we want to link to it)
         # so try to get it now
 
-        next_assignment_name = config.getKey(f"courses/{course_name}/assignments/{hw_info.next_version}/canvas_api/canvas_name", "")
+        next_assignment = get_canvas_assignment(course_name, hw_info.next_version, the_course, verbose, \
+                                                print_error_if_not_found=False)
 
-        if next_assignment_name != "":
-            # Get all assignments:
-            assignments = the_course.get_assignments()
-            next_assignment_url = None
-
-            for assign in assignments:
-                if assign.name == next_assignment_name:
-                    next_assignment_url = f"{api_url}courses/{the_course.id}/assignments/{assign.id}"
-                    data['next_assignment_url'] = next_assignment_url
-                    break
+        if next_assignment is not None:
+            next_assignment_url = f"{api_url}courses/{the_course.id}/assignments/{next_assignment.id}"
+            data['next_assignment_url'] = next_assignment_url
 
     try:
         # Render the template with the data
@@ -1072,7 +1071,7 @@ def download_all(urls, verbose):
     futures_list = []
     results = []
 
-    with ThreadPoolExecutor(max_workers=13) as executor:
+    with ThreadPoolExecutor(max_workers=50) as executor:
         for url in urls:
             futures = executor.submit(download_one, url, verbose)
             futures_list.append(futures)
@@ -1097,7 +1096,8 @@ def download_all(urls, verbose):
 # As of 2023 Fall it looks like Canvas isn't reporting the start/end dates for the class anymore :(
 # So the user must specify a matching RegEx in the gradingTool.json file
 # and this will return the one match for the course
-def getMatchingCourses(config, course_name: str, sz_re_quarter:str, verbose):
+def get_canvas_course(course_name: str, verbose, sz_re_quarter: str = ".*"):
+    config = get_app_config()
     api_url, api_key, sz_re_course = config.verify_keys([
         "canvas/api/url",
         "canvas/api/key",
@@ -1112,46 +1112,50 @@ def getMatchingCourses(config, course_name: str, sz_re_quarter:str, verbose):
         printError("Unable to connect to the Canvas server - are we offline?")
         sys.exit(-1)
 
-    if verbose:
-        print(f"= Getting information from Canvas:")
-        print("\tSearching for target course in the list of all courses")
+    matching_course = None
+    persistent_app_cache = get_app_cache(verbose)
 
-    courses = list(curuser.get_courses(enrollment_type='teacher',
-                                       state=['unpublished', 'available'],
-                                       include=['term']))  # 'include': ['term', 'concluded']
+    if sz_re_course in persistent_app_cache:
+        course_id= persistent_app_cache.get(sz_re_course)
+        course = canvas.get_course(course_id)
 
-    # courses = list(filter(is_current_course, courses))
+        # Verify that we actually have the correct course
+        # (i.e., we're not in a new term with a re-used course name)
+        if hasattr(course, 'name') \
+            and re.search(sz_re_course, course.name) \
+            and re.search(sz_re_quarter, course.name):
 
-    courses_to_look_for = [
-        sz_re_course
-    ]
+            matching_course = course
+            if verbose:
+                print(f"= Found cached Canvas ID for course {course_id} (aka \"{course.name}\")")
 
-    # create lookup table in case we get duplicate course matches
-    matching_courses = {pattern: list() for pattern in courses_to_look_for}
+    # If we didn't find a cached, valid match then go (re)find the Canvas ID for this course:
+    if matching_course is None:
+        if verbose:
+            print(f"= Getting information from Canvas:")
+            print("\tSearching for target course in the list of all courses")
 
-    # closure: if course is in list, then add it to matching_courses dict
-    def is_course_in_list(course_maybe):
-        # print( "- " + course_maybe.name)
-        # if is_current_course(course_maybe):
-            for pattern in courses_to_look_for:
-                if hasattr(course_maybe, 'name') \
-                        and re.search(pattern, course_maybe.name) \
-                        and re.search(sz_re_quarter, course_maybe.name):
-                    if verbose:
-                        print("\tFound \"" + course_maybe.name + "\", whose named matched the pattern " + pattern)
-                    matching_courses[pattern].append(course_maybe)
+        # Get CanvasAPI.PaginatedList, which will lazy-load individual courses:
+        courses = curuser.get_courses(enrollment_type='teacher',
+                                           state=['unpublished', 'available'],
+                                           include=['term'])  # 'include': ['term', 'concluded']
 
-    # the list function forces map to be applied to the list (???)
-    list(map(is_course_in_list, courses))
+        for course in courses:
+            if hasattr(course, 'name') \
+                    and re.search(sz_re_course, course.name) \
+                    and re.search(sz_re_quarter, course.name):
+                if verbose:
+                    print("\tFound \"" + course.name + "\", whose named matched the pattern " + sz_re_course)
+                matching_course = course
+                break
 
-    # go through and order courses from newest to oldest:
-    for list_of_courses in matching_courses.values():
-        if len(list_of_courses) > 1:
-            list_of_courses.sort(key=course_key_timestamp, reverse=True)
+        if matching_course is None:
+            printError("\nNo matching course names for the pattern\n" + course_name)
+            print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
 
-    # theMatches = matching_courses.items()
+        persistent_app_cache.set(sz_re_course, matching_course.id, expire=APP_CACHE_EXPIRATION)
 
-    return matching_courses, canvas
+    return matching_course, canvas
 
 foundMatchingAssignment = False
 
@@ -1167,174 +1171,168 @@ def do_fnx_per_matching_submission(course_name, sz_re_quarter, hw_name, dest_dir
 
     config = get_app_config()
 
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, results_lists.verbose)
+    course, canvas = get_canvas_course(course_name, results_lists.verbose, sz_re_quarter)
+    if course is None:
+        return
 
-    for key, course in matching_courses.items():
-        if len(course) == 0:
-            print("\nNo matching course names for the pattern\n" + key)
-            print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
+    if results_lists.verbose:
+        print(f"\tGetting Users for \"{course.name}\"")
+
+    users_lookup = dict()
+    users = course.get_users(enrollment_type=['student'])
+    for user in users:
+        users_lookup[user.id] = user
+
+    assignment_name = config.getKey(f"courses/{course_name}/assignments/{hw_name}/canvas_api/canvas_name")
+
+    if results_lists.verbose:
+        print(f"\tGetting Assignments for \"{course.name}\"")
+
+    # Get all assignments:
+    assignments = course.get_assignments()
+    assign_lookup = dict()
+
+    for assign in assignments:
+        assign_lookup[assign.id] = assign
+
+        if assign.name != assignment_name:
             continue
 
-        course = course[0]
+        global foundMatchingAssignment
+        foundMatchingAssignment = True  # We've found it, although there may be zero submissions/uploads to download
+
+        if not assign.has_submitted_submissions:
+            # Error message printed elsewhere
+            return
+
+        global foundSubmissions
+        foundSubmissions = True
 
         if results_lists.verbose:
-            print(f"\tGetting Users for \"{course.name}\"")
+            print(f"\tGetting Submissions for \"{assign.name}\"")
+        else: # don't indent, and show more info (pretty much the only info we'll show here in concise mode)
+            print(f"Getting Submissions for \"{assign.name}\" in \"{course.name}\"")
+        dest_dir = None
+        if dir_required:
+            if hw_name != 'all' and dest_dir_from_cmd_line is not None:
+                dest_dir = dest_dir_from_cmd_line
+            else:
+                dest_dir = config.getKey(f"courses/{course_name}/assignments/{hw_name}/dest_dir")
 
-        users_lookup = dict()
-        users = course.get_users(enrollment_type=['student'])
-        for user in users:
-            users_lookup[user.id] = user
+        if assign.group_category_id is None:
+            if results_lists.verbose:
+                print("\tThis is NOT a group assignment")
+        else:
+            try:
+                group_category = canvas.get_group_category(assign.group_category_id)
+                if results_lists.verbose:
+                    print(f"\tThis assignment is a group assignment, using group \"{group_category.name}\"")
 
-        assignment_name = config.getKey(f"courses/{course_name}/assignments/{hw_name}/canvas_api/canvas_name")
+                for group in group_category.get_groups():
+                    # print(f"\tGroup: {group.name}")
+
+                    # Reset the 'Group Members' file
+                    safe_name = format_filename(group.name)
+                    group_dest_dir = os.path.join(dest_dir, safe_name)
+                    os.makedirs(group_dest_dir, exist_ok=True)
+                    with open(os.path.join(group_dest_dir, "GROUP_MEMBERS.txt"), "w", encoding="utf-8") as myfile:
+                        pass
+
+                    for user in group.get_users():
+                        obj_user = users_lookup[user.id]
+                        # print(f"\t\t{obj_user.name}")
+                        users_lookup[user.id].attributes["group"] = group
+            except canvasapi.exceptions.ResourceDoesNotExist as e:
+                printError(f"*** This assignment is a group assignment, but the group-set that was used can't be found (was it deleted after students handed in work?)***")
 
         if results_lists.verbose:
-            print(f"\tGetting Assignments for \"{course.name}\"")
+            print(f"\n= {msg_to_display}:")
+            print(" ") # blank, spacer line
 
-        # Get all assignments:
-        assignments = course.get_assignments()
-        assign_lookup = dict()
+        # https://canvasapi.readthedocs.io/en/latest/assignment-ref.html#canvasapi.assignment.Assignment.get_submissions
+        submissions = assign.get_submissions(include=["submission_history"])
 
-        for assign in assignments:
-            assign_lookup[assign.id] = assign
+        stop_early = 2
 
-            if assign.name != assignment_name:
+        for sub in submissions:
+            # print("\nNEXT SUBMISSION: ==================================================")
+
+            if sub.user_id not in users_lookup:
+
+                # Concise mode: only print info when it looks like there was something submitted
+                if results_lists.verbose or \
+                        (not results_lists.verbose and (not sub.missing or \
+                        sub.workflow_state != "unsubmitted" \
+                        or sub.submitted_at is not None)):
+                    print(f"\tUnknown user id ({sub.user_id}) - skipping submission ".ljust(60, "-"))
+                    if obj_user is not None:
+                        print(f"\t\tobj_user.name: \"{obj_user.name}\"")
+                    print(f"\t\tworkflow_state: \"{sub.workflow_state}\" | Missing? {sub.missing} | submitted_at: {sub.submitted_at}")
+
+                # Regardless, we don't have user info, so go on to the next student
                 continue
 
-            global foundMatchingAssignment
-            foundMatchingAssignment = True  # We've found it, although there may be zero submissions/uploads to download
+            obj_user = users_lookup[sub.user_id]
+            capped = string.capwords(obj_user.name)
+            firstname = capped.split()[0].strip()
+            lastname = capped.split()[-1].strip()
 
-            if not assign.has_submitted_submissions:
-                # Error message printed elsewhere
-                return
+            # Students are allowed to put in nicknames, which show up at the end of the string:
+            # "Smith, Robert (Bob)"
+            if len(lastname) > 2 and lastname[0] == '(' and lastname[-1] == ')':
+                lastname = capped.split()[-2].strip()
 
-            global foundSubmissions
-            foundSubmissions = True
+            # Repair the user object so that anything else looking for first & last names
+            # will get the correct strings:
+            obj_user.name = obj_user.short_name = firstname + ' ' + lastname
+            obj_user.sortable_name = lastname + ', ' + firstname
+
+            group = None
+            if hasattr(obj_user, 'attributes') and 'group' in obj_user.attributes and obj_user.attributes["group"] is not None:
+                group = obj_user.attributes['group']
 
             if results_lists.verbose:
-                print(f"\tGetting Submissions for \"{assign.name}\"")
-            else: # don't indent, and show more info (pretty much the only info we'll show here in concise mode)
-                print(f"Getting Submissions for \"{assign.name}\" in \"{course.name}\"")
-            dest_dir = None
-            if dir_required:
-                if hw_name != 'all' and dest_dir_from_cmd_line is not None:
-                    dest_dir = dest_dir_from_cmd_line
+                if group is None:
+                    print(f"\t{lastname}, {firstname} ".ljust(60, "-") )
                 else:
-                    dest_dir = config.getKey(f"courses/{course_name}/assignments/{hw_name}/dest_dir")
+                    print(f"\t{group.name} == ({lastname}, {firstname}) ".ljust(60, "-"))
 
-            if assign.group_category_id is None:
+            # Is Canvas telling us about an empty "submission" (i.e., student didn't hand in any work)?
+            if sub.missing or sub.submitted_at is None:
+                # len(sub.submission_history) == 1 and "submitted_at" not in sub.submission_history[0]:
                 if results_lists.verbose:
-                    print("\tThis is NOT a group assignment")
+                    print("\t\tNo work uploaded")
+
+                results_lists.no_submission.append(f"{lastname}, {firstname}")
+                continue
+
+            if sub.assignment_id not in assign_lookup:
+                print(f"\t\tUnknown assignment id encountered - skipping submission! ID = {sub.assignment_id}")
+                continue
+
+            obj_assign = assign_lookup[sub.assignment_id]
+
+            # If student is part of a group then put in group folder
+            if group is not None:
+                safe_name = format_filename(group.name)
+                sub_dest_dir = os.path.join(dest_dir, safe_name)
+                with open(os.path.join(sub_dest_dir,"GROUP_MEMBERS.txt"), "a", encoding="utf-8") as myfile:
+                    myfile.write(obj_user.name + "\n")
+
+            # Otherwise, put it into a folder for this particular student
             else:
-                try:
-                    group_category = canvas.get_group_category(assign.group_category_id)
-                    if results_lists.verbose:
-                        print(f"\tThis assignment is a group assignment, using group \"{group_category.name}\"")
-
-                    for group in group_category.get_groups():
-                        # print(f"\tGroup: {group.name}")
-
-                        # Reset the 'Group Members' file
-                        safe_name = format_filename(group.name)
-                        group_dest_dir = os.path.join(dest_dir, safe_name)
-                        os.makedirs(group_dest_dir, exist_ok=True)
-                        with open(os.path.join(group_dest_dir, "GROUP_MEMBERS.txt"), "w", encoding="utf-8") as myfile:
-                            pass
-
-                        for user in group.get_users():
-                            obj_user = users_lookup[user.id]
-                            # print(f"\t\t{obj_user.name}")
-                            users_lookup[user.id].attributes["group"] = group
-                except canvasapi.exceptions.ResourceDoesNotExist as e:
-                    printError(f"*** This assignment is a group assignment, but the group-set that was used can't be found (was it deleted after students handed in work?)***")
-
-            if results_lists.verbose:
-                print(f"\n= {msg_to_display}:")
-                print(" ") # blank, spacer line
-
-            # https://canvasapi.readthedocs.io/en/latest/assignment-ref.html#canvasapi.assignment.Assignment.get_submissions
-            submissions = assign.get_submissions(include=["submission_history"])
-
-            stop_early = 2
-
-            for sub in submissions:
-                # print("\nNEXT SUBMISSION: ==================================================")
-
-                if sub.user_id not in users_lookup:
-
-                    # Concise mode: only print info when it looks like there was something submitted
-                    if results_lists.verbose or \
-                            (not results_lists.verbose and (not sub.missing or \
-                            sub.workflow_state != "unsubmitted" \
-                            or sub.submitted_at is not None)):
-                        print(f"\tUnknown user id ({sub.user_id}) - skipping submission ".ljust(60, "-"))
-                        if obj_user is not None:
-                            print(f"\t\tobj_user.name: \"{obj_user.name}\"")
-                        print(f"\t\tworkflow_state: \"{sub.workflow_state}\" | Missing? {sub.missing} | submitted_at: {sub.submitted_at}")
-
-                    # Regardless, we don't have user info, so go on to the next student
-                    continue
-
-                obj_user = users_lookup[sub.user_id]
-                capped = string.capwords(obj_user.name)
-                firstname = capped.split()[0].strip()
-                lastname = capped.split()[-1].strip()
-
-                # Students are allowed to put in nicknames, which show up at the end of the string:
-                # "Smith, Robert (Bob)"
-                if len(lastname) > 2 and lastname[0] == '(' and lastname[-1] == ')':
-                    lastname = capped.split()[-2].strip()
-
-                # Repair the user object so that anything else looking for first & last names
-                # will get the correct strings:
-                obj_user.name = obj_user.short_name = firstname + ' ' + lastname
-                obj_user.sortable_name = lastname + ', ' + firstname
-
-                group = None
-                if hasattr(obj_user, 'attributes') and 'group' in obj_user.attributes and obj_user.attributes["group"] is not None:
-                    group = obj_user.attributes['group']
-
-                if results_lists.verbose:
-                    if group is None:
-                        print(f"\t{lastname}, {firstname} ".ljust(60, "-") )
-                    else:
-                        print(f"\t{group.name} == ({lastname}, {firstname}) ".ljust(60, "-"))
-
-                # Is Canvas telling us about an empty "submission" (i.e., student didn't hand in any work)?
-                if sub.missing or sub.submitted_at is None:
-                    # len(sub.submission_history) == 1 and "submitted_at" not in sub.submission_history[0]:
-                    if results_lists.verbose:
-                        print("\t\tNo work uploaded")
-
-                    results_lists.no_submission.append(f"{lastname}, {firstname}")
-                    continue
-
-                if sub.assignment_id not in assign_lookup:
-                    print(f"\t\tUnknown assignment id encountered - skipping submission! ID = {sub.assignment_id}")
-                    continue
-
-                obj_assign = assign_lookup[sub.assignment_id]
-
-                # If student is part of a group then put in group folder
-                if group is not None:
-                    safe_name = format_filename(group.name)
-                    sub_dest_dir = os.path.join(dest_dir, safe_name)
-                    with open(os.path.join(sub_dest_dir,"GROUP_MEMBERS.txt"), "a", encoding="utf-8") as myfile:
-                        myfile.write(obj_user.name + "\n")
-
-                # Otherwise, put it into a folder for this particular student
-                else:
-                    # Now add the student's name onto the end
-                    # Format like the organized .ZIP downloads:
-                    sub_dest_dir = os.path.join(dest_dir, name_to_last_first(obj_user.name) + '_' + str(obj_user.id) + '_FROM_CANVAS')
+                # Now add the student's name onto the end
+                # Format like the organized .ZIP downloads:
+                sub_dest_dir = os.path.join(dest_dir, name_to_last_first(obj_user.name) + '_' + str(obj_user.id) + '_FROM_CANVAS')
 
 
-                fnx(sub, obj_user, obj_assign, sub_dest_dir, results_lists)
+            fnx(sub, obj_user, obj_assign, sub_dest_dir, results_lists)
 
-                # break # uncomment to stop after a downloading a single student
-                #
-                # # uncomment to stop after stop_early students
-                # if stop_early  <= 1: break
-                # stop_early = stop_early - 1
+            # break # uncomment to stop after a downloading a single student
+            #
+            # # uncomment to stop after stop_early students
+            # if stop_early  <= 1: break
+            # stop_early = stop_early - 1
 
 def fn_canvas_download_homework(args):
 
@@ -1645,9 +1643,16 @@ NO_DUE_DATE_MARKER_STRING = "gradingTool.json specified 'NO_DUE_DATE' for this i
 def fn_canvas_set_due_dates(args):
     course_name = args.COURSE
     hw_name = args.HOMEWORK_NAME
-    verbose = False
+    verbose = args.VERBOSE
 
     config = get_app_config()
+
+    is_json_course_found = config.getKey(f"courses/{course_name}", "")
+    if is_json_course_found == "":
+        printError(f"Could not find course info in JSON config file for \"{course_name}\"")
+        print(f"\tIs \"{course_name}\"  an alias (like 2a4, or 3i11, etc)?")
+        return
+
 
     general_due_date_info = config.getKey(f"due_date_info", "")
     if general_due_date_info == "":
@@ -1738,28 +1743,9 @@ def fn_canvas_set_due_dates(args):
 
     # Go through all the assignments in Canvas, via the CanvasAPI:
     print("Go through all the assignments in Canvas, via the CanvasAPI:")
-    sz_re_quarter = ".*"
-    matching_courses, canvas = getMatchingCourses(config, course_name, sz_re_quarter, verbose)
-
-    if len(matching_courses.items()) == 0:
-        printError(f"Couldn't find any courses matching {course_name}")
+    course, canvas = get_canvas_course(course_name, verbose)
+    if course is None:
         return
-
-    if len(matching_courses.items()) > 1:
-        printError(f"Found more than 1 course matching {course_name}")
-        for key, course in matching_courses.items():
-            print(f"\t{key}")
-        return
-
-    # Get the first item in the list:
-    # https://stackoverflow.com/a/39292086/250610
-    course_name, course = next(iter(matching_courses.items()))
-    if len(course) == 0:
-        print("\nNo matching course names for the pattern\n" + course_name)
-        print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
-        return
-
-    course = course[0]
 
     # if verbose:
     print(f"Getting Assignments for \"{course.name}\"")
