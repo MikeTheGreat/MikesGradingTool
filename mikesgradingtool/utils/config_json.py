@@ -114,10 +114,10 @@ class GradingToolConfig:
             # Couldn't find 'courses' in the path; this is ok - just return the dest_dir
             return dest_dir
 
-        if SZ_ASSIGNMENTS_KEY not in course or  SZ_DEST_DIR_SUFFIX_KEY not in course[SZ_ASSIGNMENTS_KEY]:
+        if  SZ_DEST_DIR_SUFFIX_KEY not in course[SZ_ASSIGNMENTS_KEY]:
             return dest_dir
 
-        suffix = course[SZ_ASSIGNMENTS_KEY][SZ_DEST_DIR_SUFFIX_KEY]
+        suffix = course[SZ_DEST_DIR_SUFFIX_KEY]
 
         dest_dir += suffix
 
@@ -134,8 +134,8 @@ class GradingToolConfig:
             if course == "":
                 return dest_dir
 
-        if SZ_ASSIGNMENTS_KEY in course and  SZ_DEST_DIR_SUFFIX_KEY in course[SZ_ASSIGNMENTS_KEY]:
-            suffix = course[SZ_ASSIGNMENTS_KEY][SZ_DEST_DIR_SUFFIX_KEY]
+        if SZ_DEST_DIR_SUFFIX_KEY in course[SZ_ASSIGNMENTS_KEY]:
+            suffix = course[SZ_DEST_DIR_SUFFIX_KEY]
 
             if not dest_dir.endswith(suffix):
                 dest_dir += suffix
