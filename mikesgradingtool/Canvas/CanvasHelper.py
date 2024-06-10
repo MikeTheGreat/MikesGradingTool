@@ -263,10 +263,22 @@ def parse_datetime_with_or_without_time(sz):
             parsed_datetime = datetime.datetime.strptime(sz, "%Y-%m-%d-%H-%M")
         except:
             try:
+                general_due_date_info = get_general_due_date_info_defaults()
+                if general_due_date_info == None:
+                    return
+
                 parsed_datetime = datetime.datetime.strptime(sz, "%Y-%m-%d")
-                parsed_datetime = datetime.datetime.combine(parsed_datetime.date(), datetime.time(23, 59, 0))
+                parsed_datetime = datetime.datetime.combine(parsed_datetime.date(), \
+                                                            general_due_date_info['assignment_default_due_time'])
             except:
                 pass
+    config = get_app_config()
+    zoneName = config.getKey(f"app-wide_config/preferred_time_zone", "")
+    if zoneName == "":
+        printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
+        return
+    local_time_zone = pytz.timezone(zoneName)
+    parsed_datetime = parsed_datetime.astimezone(local_time_zone)
     return parsed_datetime
 
 def fn_canvas_set_assignment_due_date(args):
@@ -315,6 +327,7 @@ def fn_canvas_lock_assignment(args):
     lock = args.UNLOCK
 
     config = get_app_config()
+    # TODO: Remove the following
     zoneName = config.getKey(f"app-wide_config/preferred_time_zone", "")
     if zoneName == "":
         printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
@@ -1653,19 +1666,9 @@ def fn_canvas_set_due_dates(args):
         print(f"\tIs \"{course_name}\"  an alias (like 2a4, or 3i11, etc)?")
         return
 
-
-    general_due_date_info = config.getKey(f"due_date_info", "")
-    if general_due_date_info == "":
-        printError(f"Could not find general due date info in gradingTool.json")
+    general_due_date_info = get_general_due_date_info_defaults()
+    if general_due_date_info == None:
         return
-
-    zoneName = config.getKey(f"app-wide_config/preferred_time_zone", "")
-    if zoneName == "":
-        printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
-        return
-    general_due_date_info['time_zone'] = pytz.timezone(zoneName)
-
-    general_due_date_info = set_general_due_date_info_defaults(general_due_date_info)
 
     if args.FIRST_DAY_OF_QUARTER == '':
         if 'date_of_first_day_of_the_quarter' in general_due_date_info \
@@ -1978,31 +1981,42 @@ def calculateDueDate(assign, start_of_quarter, due_date_info_for_course, general
     # This will be replaced (or else it will be true :)  )
     due_date = f"Internal error when trying to calculate {assign['name']}"
 
-    if relative_to == "START_OF_QUARTER":
-        due_date = start_of_quarter
-    elif relative_to == "FIRST_CLASS_OF_QUARTER":
-        due_date = start_of_quarter
-        offsets.insert(0, "-1 CALENDAR_DAY")
-        offsets.insert(1, "+1 CLASS_DAY")
-    elif relative_to == "NO_DUE_DATE":
-        due_date = NO_DUE_DATE_MARKER_STRING
-    elif relative_to == "ASSIGNMENT":
-        if 'assignment_name' not in due_date_info['relative_to']:
-            return f"Assignment {assign['name']} doesn't have a 'assignment_name' field in the 'due_date/relative_to' object"
-        base_due_date_assign_name = due_date_info['relative_to']['assignment_name']
-        # TODO: Recursively calculate (and cache) relative due date here
-
-        if base_due_date_assign_name not in assignments_from_json:
-            due_date = f"Couldn't determine due date of {assign['name']} because we could not find \"{base_due_date_assign_name}\" in gradingTool.json"
+    if relative_to == "ABSOLUTE_DATETIME":
+        if 'datetime' not in due_date_info['relative_to']:
+            due_date += " ABSOLUTE_DATETIME was missing required 'relative_to' config setting"
         else:
-            due_date = calculateDueDate(assignments_from_json[base_due_date_assign_name], start_of_quarter, due_date_info_for_course, general_due_date_info, assignments_from_json)
-            if isinstance(due_date, str):
-                due_date = f"Couldn't determine due date of {assign['name']} because of a problem with {base_due_date_assign_name}:\n" + due_date
+            abs_date = due_date_info['relative_to']['datetime']
+            due_date = parse_datetime_with_or_without_time(abs_date)
+            if due_date is None:
+                due_date += f" Given the ABSOLUTE_DATETIME of {due_date_info['relative_to']['datetime']} we couldn't convert this using YYYY-MM-DD or YYYY-MM-DD-HH-MM formats"
 
-    if  isinstance(due_date, datetime.datetime):
-        # print(f"Applying offsets to {assign['name']}")
-        due_date = apply_offsets_to_due_date(due_date, offsets, due_date_info_for_course, general_due_date_info)
-        due_date = set_due_date_time(due_date, general_due_date_info)
+            due_date = apply_offsets_to_due_date(due_date, offsets, due_date_info_for_course, general_due_date_info)
+    else:
+        if relative_to == "START_OF_QUARTER":
+            due_date = start_of_quarter
+        elif relative_to == "FIRST_CLASS_OF_QUARTER":
+            due_date = start_of_quarter
+            offsets.insert(0, "-1 CALENDAR_DAY")
+            offsets.insert(1, "+1 CLASS_DAY")
+        elif relative_to == "NO_DUE_DATE":
+            due_date = NO_DUE_DATE_MARKER_STRING
+        elif relative_to == "ASSIGNMENT":
+            if 'assignment_name' not in due_date_info['relative_to']:
+                return f"Assignment {assign['name']} doesn't have a 'assignment_name' field in the 'due_date/relative_to' object"
+            base_due_date_assign_name = due_date_info['relative_to']['assignment_name']
+            # TODO: Recursively calculate (and cache) relative due date here
+
+            if base_due_date_assign_name not in assignments_from_json:
+                due_date = f"Couldn't determine due date of {assign['name']} because we could not find \"{base_due_date_assign_name}\" in gradingTool.json"
+            else:
+                due_date = calculateDueDate(assignments_from_json[base_due_date_assign_name], start_of_quarter, due_date_info_for_course, general_due_date_info, assignments_from_json)
+                if isinstance(due_date, str):
+                    due_date = f"Couldn't determine due date of {assign['name']} because of a problem with {base_due_date_assign_name}:\n" + due_date
+
+        if  isinstance(due_date, datetime.datetime):
+            # print(f"Applying offsets to {assign['name']}")
+            due_date = apply_offsets_to_due_date(due_date, offsets, due_date_info_for_course, general_due_date_info)
+            due_date = set_due_date_time(due_date, general_due_date_info)
 
     # Memoize it, so we don't have to repeat all this work
     assign['resolved_due_date'] = due_date
@@ -2178,7 +2192,19 @@ def noninstructional_day_json_to_python(noninst_day):
 
     return noninst_day
 
-def set_general_due_date_info_defaults(general_due_dates):
+def get_general_due_date_info_defaults():
+    config = get_app_config()
+    general_due_dates = config.getKey(f"due_date_info", "")
+    if general_due_dates == "":
+        printError(f"Could not find general due date info in gradingTool.json")
+        return None
+
+    zoneName = config.getKey(f"app-wide_config/preferred_time_zone", "")
+    if zoneName == "":
+        printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
+        return None
+
+    general_due_dates['time_zone'] = pytz.timezone(zoneName)
     if 'date_of_first_day_of_the_quarter' in general_due_dates:
         general_due_dates['date_of_first_day_of_the_quarter'] = datetime.datetime.strptime(general_due_dates['date_of_first_day_of_the_quarter'], FMT_DATE_WITHOUT_TIME)
         general_due_dates['date_of_first_day_of_the_quarter'] = date_time_from_local_to_utc(general_due_dates['date_of_first_day_of_the_quarter'], \
@@ -2205,7 +2231,6 @@ def set_general_due_date_info_defaults(general_due_dates):
         general_due_dates['noninstructional_days'] = []
     else:
         general_due_dates['noninstructional_days'] = [noninstructional_day_json_to_python(noninst_day) for noninst_day in general_due_dates['noninstructional_days'] if is_valid_noninstructional_day(noninst_day)]
-
 
     return general_due_dates
 
