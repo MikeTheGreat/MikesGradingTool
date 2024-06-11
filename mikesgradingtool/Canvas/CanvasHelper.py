@@ -410,11 +410,12 @@ def fn_canvas_new_announcement(args):
     optional_date = parse_datetime_with_or_without_time(args.DATE)
 
     # Get the file path to the templates (both title and message/body)
-    api_url, course_obj, fp_title_template, fp_message_template = config.verify_keys([
+    api_url, course_obj, fp_title_template, fp_message_template, due_date_info = config.verify_keys([
         "canvas/api/url",
         f"courses/{course_name}",
         f"courses/{course_name}/announcement_templates/title_{template_name}",
-        f"courses/{course_name}/announcement_templates/message_{template_name}"
+        f"courses/{course_name}/announcement_templates/message_{template_name}",
+        f"courses/due_date_info"
     ])
     assign_obj = None
     if hw_info is not None:
@@ -456,8 +457,9 @@ def fn_canvas_new_announcement(args):
 
     # Define data to pass into the template
     data = {
-        'course': course_obj,
         'assignment': assign_obj,
+        'course': course_obj,
+        'due_date_info': due_date_info
     }
 
     if optional_date:
@@ -1981,42 +1983,35 @@ def calculateDueDate(assign, start_of_quarter, due_date_info_for_course, general
     # This will be replaced (or else it will be true :)  )
     due_date = f"Internal error when trying to calculate {assign['name']}"
 
-    if relative_to == "ABSOLUTE_DATETIME":
-        if 'datetime' not in due_date_info['relative_to']:
-            due_date += " ABSOLUTE_DATETIME was missing required 'relative_to' config setting"
+    if relative_to == "START_OF_QUARTER":
+        due_date = start_of_quarter
+    elif relative_to == "FIRST_CLASS_OF_QUARTER":
+        due_date = start_of_quarter
+        offsets.insert(0, "-1 CALENDAR_DAY")
+        offsets.insert(1, "+1 CLASS_DAY")
+    elif relative_to == "NO_DUE_DATE":
+        due_date = NO_DUE_DATE_MARKER_STRING
+    elif relative_to == "ASSIGNMENT":
+        if 'assignment_name' not in due_date_info['relative_to']:
+            return f"Assignment {assign['name']} doesn't have a 'assignment_name' field in the 'due_date/relative_to' object"
+        base_due_date_assign_name = due_date_info['relative_to']['assignment_name']
+        # TODO: Recursively calculate (and cache) relative due date here
+
+        if base_due_date_assign_name not in assignments_from_json:
+            due_date = f"Couldn't determine due date of {assign['name']} because we could not find \"{base_due_date_assign_name}\" in gradingTool.json"
         else:
-            abs_date = due_date_info['relative_to']['datetime']
-            due_date = parse_datetime_with_or_without_time(abs_date)
-            if due_date is None:
-                due_date += f" Given the ABSOLUTE_DATETIME of {due_date_info['relative_to']['datetime']} we couldn't convert this using YYYY-MM-DD or YYYY-MM-DD-HH-MM formats"
-
-            due_date = apply_offsets_to_due_date(due_date, offsets, due_date_info_for_course, general_due_date_info)
+            due_date = calculateDueDate(assignments_from_json[base_due_date_assign_name], start_of_quarter, due_date_info_for_course, general_due_date_info, assignments_from_json)
+            if isinstance(due_date, str):
+                due_date = f"Couldn't determine due date of {assign['name']} because of a problem with {base_due_date_assign_name}:\n" + due_date
     else:
-        if relative_to == "START_OF_QUARTER":
-            due_date = start_of_quarter
-        elif relative_to == "FIRST_CLASS_OF_QUARTER":
-            due_date = start_of_quarter
-            offsets.insert(0, "-1 CALENDAR_DAY")
-            offsets.insert(1, "+1 CLASS_DAY")
-        elif relative_to == "NO_DUE_DATE":
-            due_date = NO_DUE_DATE_MARKER_STRING
-        elif relative_to == "ASSIGNMENT":
-            if 'assignment_name' not in due_date_info['relative_to']:
-                return f"Assignment {assign['name']} doesn't have a 'assignment_name' field in the 'due_date/relative_to' object"
-            base_due_date_assign_name = due_date_info['relative_to']['assignment_name']
-            # TODO: Recursively calculate (and cache) relative due date here
+        due_date += f": Did not recognize relative_to['type'] of {relative_to}"
 
-            if base_due_date_assign_name not in assignments_from_json:
-                due_date = f"Couldn't determine due date of {assign['name']} because we could not find \"{base_due_date_assign_name}\" in gradingTool.json"
-            else:
-                due_date = calculateDueDate(assignments_from_json[base_due_date_assign_name], start_of_quarter, due_date_info_for_course, general_due_date_info, assignments_from_json)
-                if isinstance(due_date, str):
-                    due_date = f"Couldn't determine due date of {assign['name']} because of a problem with {base_due_date_assign_name}:\n" + due_date
+    if  isinstance(due_date, datetime.datetime):
+        # First set the time to the default so we can optionally replace it using an offset
+        due_date = set_due_date_time(due_date, general_due_date_info)
 
-        if  isinstance(due_date, datetime.datetime):
-            # print(f"Applying offsets to {assign['name']}")
-            due_date = apply_offsets_to_due_date(due_date, offsets, due_date_info_for_course, general_due_date_info)
-            due_date = set_due_date_time(due_date, general_due_date_info)
+        due_date = apply_offsets_to_due_date(due_date, offsets, due_date_info_for_course, general_due_date_info)
+
 
     # Memoize it, so we don't have to repeat all this work
     assign['resolved_due_date'] = due_date
@@ -2031,7 +2026,15 @@ def apply_offsets_to_due_date(due_date:datetime.datetime, offsets, due_date_info
         parts = szOffset.split(' ')
         op = parts[len(parts) - 1] # operation is the last item
 
-        if op == "CALENDAR_DAY":
+        if op == "ABS_TIME":
+            sz_time = parts[0]
+            try:
+                due_time = datetime.datetime.strptime(sz_time, FMT_TIME_WITHOUT_DATE).time()
+            except ValueError as ve:
+                printError(f"Could not parse {sz_time} as time using format string of {FMT_TIME_WITHOUT_DATE} - IGNORING THIS OFFSET")
+            due_date = due_date.combine(due_date, due_time, tzinfo=due_date.tzinfo)
+
+        elif op == "CALENDAR_DAY":
             how_many = int(parts[0])
             # print(f"Moving forwards {how_many} calendar days")
             if how_many > 0:
