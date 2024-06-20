@@ -1655,10 +1655,15 @@ def confirm_choice(szPrompt: str, szTypeThis:str, szMsgProceeding: str, szMsgCan
 # Handle times for due dates (right now it's just dates)
 #
 NO_DUE_DATE_MARKER_STRING = "gradingTool.json specified 'NO_DUE_DATE' for this item"
-def fn_canvas_set_due_dates(args):
+def fn_canvas_calculate_all_due_dates(args):
     course_name = args.COURSE
     hw_name = args.HOMEWORK_NAME
     verbose = args.VERBOSE
+    noop = args.NOOP
+
+    print(f"Calculating due dates for {course_name}")
+    if noop:
+        print(f"\tNo-op mode: this will NOT make any changes in Canvas (but will still print out the calculated dates)")
 
     config = get_app_config()
 
@@ -1753,14 +1758,15 @@ def fn_canvas_set_due_dates(args):
         return
 
     # if verbose:
-    print(f"Getting Assignments for \"{course.name}\"")
     print(f"\tQuarter start date: {general_due_date_info['date_of_first_day_of_the_quarter'].strftime('%a, %B %d, %Y')}")
     print(f"\tQuarter end date:   {general_due_date_info['date_of_last_day_of_the_quarter'].strftime('%a, %B %d, %Y')}")
+    print(f"Getting Assignments for \"{course.name}\"")
 
-    if not confirm_choice("Do you want to change the due dates for this course?", course.name, \
-                   "Updating due dates now", \
-                   "Operation canceled - NO CHANGES MADE"):
-        return
+    if not noop:
+        if not confirm_choice("Do you want to change the due dates for this course?", course.name, \
+                       "Updating due dates now", \
+                       "Operation canceled - NO CHANGES MADE"):
+            return
 
     # Get all assignments:
     capi_assignments = course.get_assignments()
@@ -1854,13 +1860,14 @@ def fn_canvas_set_due_dates(args):
                     # restore the name that Canvas is expecting:
                     assign.name = assign.name_original
 
-                    updated_assignment = assign.edit(
-                        assignment={
-                            'due_at': due_date,
-                            'lock_at': lock_at,
-                            'unlock_at':unlock_at
-                        }
-                    )
+                    if not noop:
+                        updated_assignment = assign.edit(
+                            assignment={
+                                'due_at': due_date,
+                                'lock_at': lock_at,
+                                'unlock_at':unlock_at
+                            }
+                        )
 
                     # Restore the name without any goofy whitespacing:
                     # (We need this on the next line)
