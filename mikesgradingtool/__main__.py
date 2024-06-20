@@ -102,12 +102,17 @@ def fnPrepCopyTemplate(args):
 
     CopyTemplateToStudents(args.SRC, args.DEST, args.prefix)
 
+class ArgParserHelpOnError(argparse.ArgumentParser):
+    def error(self, message):
+        sys.stderr.write('error: %s\n' % message)
+        self.print_help()
+        sys.exit(2)
 
 # The 'CLI' function is used by the overall GradingTool program (it's needed to package stuff using PyZip)
 def CLI():
 
 #region Set up argparse
-    root_parser = argparse.ArgumentParser(
+    root_parser = ArgParserHelpOnError(
         description = mikesgradingtool.__app_name__ + ': Automate repetitive grading tasks (Version ' + mikesgradingtool.__version__ + ')')
 
     subparsers = root_parser.add_subparsers(dest='command', help='sub-command help')
@@ -309,12 +314,7 @@ def CLI():
         parser_canvas_d_r_l.add_argument('-v', '--VERBOSE', action='store_true', help='Show status of all repos (default is to show only those that have changed/need grading)')
         parser_canvas_d_r_l.set_defaults(func=CanvasHelper.fn_canvas_download_revision_template)
 
-
-    # now let's actually install these:
     setup_canvas_parsers(subparsers)
-
-
-
 #endregion
 
 
