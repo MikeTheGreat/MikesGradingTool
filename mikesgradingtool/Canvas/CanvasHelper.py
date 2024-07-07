@@ -272,13 +272,16 @@ def parse_datetime_with_or_without_time(sz):
                                                             general_due_date_info['assignment_default_due_time'])
             except:
                 pass
-    config = get_app_config()
-    zoneName = config.getKey(f"app-wide_config/preferred_time_zone", "")
-    if zoneName == "":
-        printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
-        return
-    local_time_zone = pytz.timezone(zoneName)
-    parsed_datetime = parsed_datetime.astimezone(local_time_zone)
+
+    if parsed_datetime is not None:
+        config = get_app_config()
+        zoneName = config.getKey(f"app-wide_config/preferred_time_zone", "")
+        if zoneName == "":
+            printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
+            return
+        local_time_zone = pytz.timezone(zoneName)
+        parsed_datetime = parsed_datetime.astimezone(local_time_zone)
+
     return parsed_datetime
 
 def fn_canvas_set_assignment_due_date(args):
@@ -415,7 +418,7 @@ def fn_canvas_new_announcement(args):
         f"courses/{course_name}",
         f"courses/{course_name}/announcement_templates/title_{template_name}",
         f"courses/{course_name}/announcement_templates/message_{template_name}",
-        f"courses/due_date_info"
+        f"due_date_info"
     ])
     assign_obj = None
     if hw_info is not None:
