@@ -280,7 +280,7 @@ def parse_datetime_with_or_without_time(sz):
             printError(f"Could not find app-wide_config/preferred_time_zone in gradingTool.json")
             return
         local_time_zone = pytz.timezone(zoneName)
-        parsed_datetime = parsed_datetime.astimezone(local_time_zone)
+        parsed_datetime = local_time_zone.localize(parsed_datetime)
 
     return parsed_datetime
 
