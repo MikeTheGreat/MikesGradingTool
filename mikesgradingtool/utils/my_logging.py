@@ -3,8 +3,9 @@ import logging
 
 FILTER_TO_USE = "mikesgradingtool.Autograder.file_handlers.Javascript_Handler"
 FILTER_TO_USE = "NO OUTPUT"
+FILTER_TO_USE = "" # empty string means allow everything
 
-@functools.lru_cache(1)
+@functools.lru_cache(30) # one for each file, more or less
 def get_logger(name):
     # print("Creating console_handler! : " + name)
     logger = logging.getLogger(name)
@@ -17,7 +18,7 @@ def get_logger(name):
 
     # https://docs.python.org/2/library/logging.html#logrecord-attributes
     formatter = logging.Formatter(
-        "\t\t\t%(levelname)s %(module)s:%(lineno)s %(funcName)s\n%(message)s")
+        "LOG:%(levelname)s %(module)s:%(lineno)s %(funcName)s\t%(message)s")
 
     # More verbose format:
     # "[%(asctime)s - %(funcName)10s() at %(filename)s:%(lineno)s -
@@ -28,7 +29,7 @@ def get_logger(name):
     logger.addHandler(console_handler)
     #logger.addHandler(file_handler)
 
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.ERROR)
     # logger.critical("created logger: " + name)
     # logger.setLevel(logging.DEBUG)
     return logger
