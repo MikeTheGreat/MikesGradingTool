@@ -1691,10 +1691,10 @@ def fn_canvas_calculate_all_due_dates(args):
     else:
         # first day of the quarter was specified as a string on the CLI - convert it here
         try:
-            start_of_quarter = datetime.datetime.strptime(args.FIRST_DAY_OF_QUARTER, "%Y/%m/%d")
+            start_of_quarter = datetime.datetime.strptime(args.FIRST_DAY_OF_QUARTER, "%Y-%m-%d")
             start_of_quarter = date_time_from_local_to_utc(start_of_quarter, general_due_date_info['time_zone'])
         except ValueError as ve:
-            printError(f'FIRST_DAY_OF_QUARTER parameter needs to be a date in YYYY/MM/DD format.  This is not in that format: {args.FIRST_DAY_OF_QUARTER}')
+            printError(f'FIRST_DAY_OF_QUARTER parameter needs to be a date in YYYY-MM-DD format.  This is not in that format: {args.FIRST_DAY_OF_QUARTER}')
             return
 
     # at this point start_of_quarter is a datetime, in UTC
@@ -1761,7 +1761,7 @@ def fn_canvas_calculate_all_due_dates(args):
         return
 
     # if verbose:
-    print(f"\tQuarter start date: {general_due_date_info['date_of_first_day_of_the_quarter'].strftime('%a, %B %d, %Y')}")
+    print(f"\tQuarter start date: {start_of_quarter.strftime('%a, %B %d, %Y')}")
     print(f"\tQuarter end date:   {general_due_date_info['date_of_last_day_of_the_quarter'].strftime('%a, %B %d, %Y')}")
     print(f"Getting Assignments for \"{course.name}\"")
 
@@ -1781,8 +1781,7 @@ def fn_canvas_calculate_all_due_dates(args):
         tokens = assign.name.split()
         assign.name = assign.name_normalized =" ".join(tokens)
 
-    # first, go through and print all the current due dates (in case we mess up and need to manually reset things)
-    print("Before we change anything, here are the due dates in Canvas: ".ljust(120, "="))
+
     all_capi_assignments = []
     for assign in capi_assignments:
         if not hasattr(assign, 'due_at_date'):
@@ -1794,8 +1793,11 @@ def fn_canvas_calculate_all_due_dates(args):
 
     all_capi_assignments.sort(key=functools.cmp_to_key(cmp_AssignmentForDisplay ))
 
-    for assign in all_capi_assignments:
-        assign.print()
+    if not noop:
+        # first, go through and print all the current due dates (in case we mess up and need to manually reset things)
+        print("Before we change anything, here are the due dates in Canvas: ".ljust(120, "="))
+        for assign in all_capi_assignments:
+            assign.print()
 
     all_capi_assignments_dict = {i.title : i  for i in all_capi_assignments}
     updated_capi_assignments_dict = {}
@@ -1811,7 +1813,11 @@ def fn_canvas_calculate_all_due_dates(args):
     canvas_assignments_after_quarter_end_dict = {}
 
     # Next, actually go through and adjust the due dates:
-    print("\nChanging the due dates in Canvas: ".ljust(120, "="))
+    if not noop:
+        print("\nChanging the due dates in Canvas: ".ljust(120, "="))
+    else:
+        print("\nCalculating due dates (but NOT changing anything in Canvas): ".ljust(120, "="))
+
     for assign in capi_assignments:
         if assign.name in json_assignments_lookup and 'due_date' in json_assignments_lookup[assign.name]:
 
@@ -1871,14 +1877,14 @@ def fn_canvas_calculate_all_due_dates(args):
                                 'unlock_at':unlock_at
                             }
                         )
+                        print("Updated!")
+
+                    # Copy the assignment into the 'updated assignments' map:
+                    updated_capi_assignments_dict[assign.name] = all_capi_assignments_dict[assign.name]
 
                     # Restore the name without any goofy whitespacing:
                     # (We need this on the next line)
                     assign.name = assign.name_normalized
-
-                    # Copy the assignment into the 'updated assignments' map:
-                    updated_capi_assignments_dict[assign.name] = all_capi_assignments_dict[assign.name]
-                    print("Updated!")
 
                     if isinstance(due_date, datetime.datetime) \
                         and due_date > end_of_quarter:
@@ -1933,7 +1939,7 @@ def fn_canvas_calculate_all_due_dates(args):
             assign.print()
 
     if len(capi_assignments_NOT_updated_list) > 0:
-        print("\nAssignments that were found in Canvas but were NOT updated: ".ljust(120,"=") + "\n\t(Are these missing from the JSON file?)")
+        print("\nAssignments that were found in Canvas but were NOT updated: ".ljust(120,"=") + "\n\t\t(Are these missing from the JSON file?)")
         for assign in capi_assignments_NOT_updated_list:
             assign.print()
 
@@ -1953,9 +1959,16 @@ def fn_canvas_calculate_all_due_dates(args):
     after_quarter_end_list.sort(key=functools.cmp_to_key(cmp_AssignmentForDisplay))
 
     if len(after_quarter_end_list) > 0:
-        print(Style.BRIGHT + Fore.RED + "\nAssignments that have due dates AFTER the end of the quarter: ".ljust(120,"=") + Style.RESET_ALL)
-        for assign in after_quarter_end_list:
-            assign.print()
+        # Always list when we're making changes
+        # In no-op mode if the list is short then it's probably legit, so list it anyways
+        if not noop or len(after_quarter_end_list) < 10:
+            print(
+                Style.BRIGHT + Fore.RED + "\nAssignments that have due dates AFTER the end of the quarter: ".ljust(120,                                                                                                        "=") + Style.RESET_ALL)
+            for assign in after_quarter_end_list:
+                assign.print()
+        else:
+            print(f"\nAssignments that have due dates AFTER the end of the quarter: ")
+            print(f"\tIgnoring these {len(after_quarter_end_list)} items under the assumption that the end of quarter date wasn't changed for a no-op run")
 
     noninst_days_list = list(due_date_info_for_course['noninstructional_days_that_prevented_classes_dict'])
     noninst_days_list.sort(key=functools.cmp_to_key(cmp_AssignmentForDisplay))
@@ -1963,6 +1976,10 @@ def fn_canvas_calculate_all_due_dates(args):
         print("\nRemember to create Canvas events for the following Non-Instructional Days: ".ljust(120,"="))
         for noninst_day in noninst_days_list:
             noninst_day.print()
+
+    if noop:
+        print()
+        print(Style.BRIGHT + Fore.RED + "Don't forget to update holidays, etc!!"+ Style.RESET_ALL)
 
     print() # spacer line, so it's easier to see where output ends & prompt begins :)
 

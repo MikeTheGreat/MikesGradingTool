@@ -257,7 +257,7 @@ def CLI():
         parser_canvas_set_due_dates.add_argument('HOMEWORK_NAME', nargs='?', default='',
                                                  help='The name of the homework assignment (to update only that assignment)')
         parser_canvas_set_due_dates.add_argument('-f', '--FIRST_DAY_OF_QUARTER', nargs='?', default='',
-                                                 help='The first day of the quarter, in YYYY/MM/DD format (so Sept 27th, 2023 would be 2023/09/27)')
+                                                 help='The first day of the quarter, in YYYY-MM-DD format (so Sept 27th, 2023 would be 2023-09-27)')
         parser_canvas_set_due_dates.add_argument('-n', '--NOOP', action='store_true', help='No-op: Calculate due dates but don\'t change anything')
         parser_canvas_set_due_dates.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
 
