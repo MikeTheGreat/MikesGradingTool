@@ -1168,10 +1168,11 @@ def get_canvas_course(course_name: str, verbose, sz_re_quarter: str = ".*"):
                 break
 
         if matching_course is None:
-            printError("\nNo matching course names for the pattern\n" + course_name)
-            print("\nSUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
-
-        persistent_app_cache.set(sz_re_course, matching_course.id, expire=APP_CACHE_EXPIRATION)
+            printError("No matching course names for the pattern\n\t" + sz_re_course)
+            print("REMINDER: Remember to escape your parentheses with a backslash in the JSON config file, like so: \\\\(")
+            print("SUGGESTION: Try an online Python RegEx tester to make sure that your pattern matches!")
+        else:
+            persistent_app_cache.set(sz_re_course, matching_course.id, expire=APP_CACHE_EXPIRATION)
 
     return matching_course, canvas
 
@@ -1755,7 +1756,7 @@ def fn_canvas_calculate_all_due_dates(args):
             json_assignments_lookup[assign_info['canvas_api']['canvas_name']] = assign_info
 
     # Go through all the assignments in Canvas, via the CanvasAPI:
-    print("Go through all the assignments in Canvas, via the CanvasAPI:")
+    print("Getting the assignment from Canvas")
     course, canvas = get_canvas_course(course_name, verbose)
     if course is None:
         return
@@ -1832,13 +1833,13 @@ def fn_canvas_calculate_all_due_dates(args):
                     # we have a valid datetime:
                     due_date_str = due_date.astimezone(general_due_date_info['time_zone']).strftime(
                         "%A, %b %d, %Y at %I:%M %p")
-                    print(f"\tDue on: {due_date_str.ljust(35)} : {assign.name.ljust(40)} : ", end='')
+                    print(f"\tDue on: {due_date_str.ljust(35)} : {assign.name.ljust(40)}", end='')
 
                 # Don't flag assignments as error when due date is intentionally not present:
                 # (But do update it, so that we can remove lock_at dates, etc
                 if isinstance(due_date, str) \
                         and due_date.endswith(NO_DUE_DATE_MARKER_STRING):
-                    print(f"\tDue on: NO_DUE_DATE     (from json file)    : {assign.name.ljust(40)} : ", end='')
+                    print(f"\tDue on: NO_DUE_DATE     (from json file)    : {assign.name.ljust(40)}", end='')
                     due_date = '' # Remove due date
 
                 try:
@@ -1877,7 +1878,9 @@ def fn_canvas_calculate_all_due_dates(args):
                                 'unlock_at':unlock_at
                             }
                         )
-                        print("Updated!")
+                        print(" : Updated!")
+                    else:
+                        print() # each result is printed out on it's own line
 
                     # Copy the assignment into the 'updated assignments' map:
                     updated_capi_assignments_dict[assign.name] = all_capi_assignments_dict[assign.name]
@@ -1908,14 +1911,14 @@ def fn_canvas_calculate_all_due_dates(args):
 
     all_json_assignments_dict = {}
 
-    # Any unused entries in the JSOJN file?
+    # Any unused entries in the JSON file?
     for assign_name, assign_info in course_info["assignments"].items():
 
         if 'resolved_due_date' not in assign_info:
             # This will ensure that we've calculated the due date
             # Anything we saw in the CAPI part should already have a due date
             # Anything we didn't see in the CAPI part should lack a due date until we call this:
-            date_obj = calculateDueDate(the_assignment, start_of_quarter, due_date_info_for_course, \
+            date_obj = calculateDueDate(assign_info, start_of_quarter, due_date_info_for_course, \
                              general_due_date_info, course_info["assignments"])
         else:
             date_obj = assign_info['resolved_due_date']
