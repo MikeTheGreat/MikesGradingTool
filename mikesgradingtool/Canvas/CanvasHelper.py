@@ -1220,12 +1220,10 @@ def do_fnx_per_matching_submission(course_name, sz_re_quarter, hw_name, dest_dir
         global foundMatchingAssignment
         foundMatchingAssignment = True  # We've found it, although there may be zero submissions/uploads to download
 
-        if not assign.has_submitted_submissions:
-            # Error message printed elsewhere
-            return
-
-        global foundSubmissions
-        foundSubmissions = True
+        # This used to work, but now Canvas sometimes reports a false negative :(
+        # if not assign.has_submitted_submissions:
+        #     # Error message printed elsewhere
+        #     return
 
         if results_lists.verbose:
             print(f"\tGetting Submissions for \"{assign.name}\"")
@@ -1264,17 +1262,22 @@ def do_fnx_per_matching_submission(course_name, sz_re_quarter, hw_name, dest_dir
             except canvasapi.exceptions.ResourceDoesNotExist as e:
                 printError(f"*** This assignment is a group assignment, but the group-set that was used can't be found (was it deleted after students handed in work?)***")
 
-        if results_lists.verbose:
-            print(f"\n= {msg_to_display}:")
-            print(" ") # blank, spacer line
-
         # https://canvasapi.readthedocs.io/en/latest/assignment-ref.html#canvasapi.assignment.Assignment.get_submissions
         submissions = assign.get_submissions(include=["submission_history"])
 
         stop_early = 2
 
+        global foundSubmissions
+        foundSubmissions = False
+
         for sub in submissions:
             # print("\nNEXT SUBMISSION: ==================================================")
+            if foundSubmissions == False:
+                if results_lists.verbose:
+                    print(f"\n= {msg_to_display}:")
+                    print(" ")  # blank, spacer line
+
+            foundSubmissions = True
 
             if sub.user_id not in users_lookup:
 
