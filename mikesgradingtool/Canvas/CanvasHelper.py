@@ -1767,7 +1767,7 @@ def fn_canvas_calculate_all_due_dates(args):
     # if verbose:
     print(f"\tQuarter start date: {start_of_quarter.strftime('%a, %B %d, %Y')}")
     print(f"\tQuarter end date:   {general_due_date_info['date_of_last_day_of_the_quarter'].strftime('%a, %B %d, %Y')}")
-    print(f"Getting Assignments for \"{course.name}\"")
+    print(f"Getting Assignments for \"{Style.BRIGHT + Fore.RED + course.name+ Style.RESET_ALL}\"")
 
     if not noop:
         if not confirm_choice("Do you want to change the due dates for this course?", course.name, \
