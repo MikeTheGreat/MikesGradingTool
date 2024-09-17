@@ -2163,20 +2163,14 @@ def apply_offsets_to_due_date(due_date:datetime.datetime, offsets, due_date_info
     return due_date
 
 def day_to_daynum(day:str):
-    if day == "Sun":
-        return 1
-    if day == "Mon":
-        return 2
-    if day == "Tue":
-        return 3
-    if day == "Wed":
-        return 4
-    if day == "Thu":
-        return 5
-    if day == "Fri":
-        return 6
-    if day == "Sat":
-        return 7
+    days = ["Blank space so that 'Sun' is 1", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    try:
+        day_idx = days.index(day)
+        return day_idx
+    except ValueError:
+        printError(f"day_to_daynum was given {day} but that isn't one of the legal day abbreciations: {str(days)}")
+        sys.exit(-2)
+
 
 def set_course_due_date_info_defaults(course_due_dates):
     if 'class_on_noninstructional_days' not in course_due_dates:
