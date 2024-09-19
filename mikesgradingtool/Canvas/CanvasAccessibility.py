@@ -23,6 +23,9 @@ def fn_fix_accessibility(args):
     if canvas_course is None:
         return
 
+    if not verbose:
+        print("Collecting the list of unused files\n\tPlease be patient - this may take several minutes")
+
     if verbose:
         print("== ALL FILES ===========================================================")
     files = canvas_course.get_files()
@@ -32,12 +35,14 @@ def fn_fix_accessibility(args):
 
     for file in files:
         all_files_dict[int(file.id)] = file
-    print()
 
-    sorted_files = [all_files_dict[key] for key in sorted(all_files_dict.keys())]
+    if verbose:
+        print()
 
-    for file in sorted_files:
-        print(str(file.folder_id) + ":" + str(file.id) + "  " + file.display_name)
+        sorted_files = [all_files_dict[key] for key in sorted(all_files_dict.keys())]
+
+        for file in sorted_files:
+            print(str(file.folder_id) + ":" + str(file.id) + "  " + file.display_name)
 
     course_settings = canvas_course.get_settings()
     if 'image_id' in course_settings and course_settings['image_id']:
