@@ -41,8 +41,6 @@ from rich.table import Table
 from mikesgradingtool.utils.diskcache_utils import get_app_cache
 from mikesgradingtool.utils.misc_utils import grade_list_collector
 from mikesgradingtool.MiscFiles import MiscFilesHelper
-from mikesgradingtool.MiscFiles.MiscFilesHelper import autograder_common_actions
-from mikesgradingtool.SubmissionHelpers.StudentSubmission import StudentSubmission
 from mikesgradingtool.utils.config_json import get_app_config, lookupHWInfoFromAlias
 from mikesgradingtool.utils.misc_utils import cd, format_filename, is_file_locked, lock_file, print_threadsafe
 from mikesgradingtool.utils.my_logging import get_logger
@@ -1135,7 +1133,7 @@ def get_canvas_course(course_name: str, verbose, sz_re_quarter: str = ".*"):
 
     if sz_re_course in persistent_app_cache:
         course_id= persistent_app_cache.get(sz_re_course)
-        course = canvas.get_course(course_id)
+        course = canvas.get_course(course_id, include=['term', 'syllabus_body'])
 
         # Verify that we actually have the correct course
         # (i.e., we're not in a new term with a re-used course name)
@@ -1156,7 +1154,7 @@ def get_canvas_course(course_name: str, verbose, sz_re_quarter: str = ".*"):
         # Get CanvasAPI.PaginatedList, which will lazy-load individual courses:
         courses = curuser.get_courses(enrollment_type='teacher',
                                            state=['unpublished', 'available'],
-                                           include=['term'])  # 'include': ['term', 'concluded']
+                                           include=['term', 'syllabus_body'])  # 'include': ['term', 'concluded']
 
         for course in courses:
             if hasattr(course, 'name') \

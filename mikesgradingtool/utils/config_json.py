@@ -8,12 +8,10 @@ import re
 import sys
 import typing
 
-
 import jk_commentjson
 from mikesgradingtool.utils.print_utils import printError, GradingToolError
 from requests.structures import CaseInsensitiveDict
 from jsmin import jsmin
-
 
 @functools.lru_cache(1)
 def get_app_config():
