@@ -1,3 +1,4 @@
+import os
 import re
 
 from mikesgradingtool.utils.config_json import get_app_config
@@ -5,6 +6,11 @@ from mikesgradingtool.Canvas.CanvasHelper import get_canvas_course
 from mikesgradingtool.utils.print_utils import printError
 
 # TODO:
+#   * List files in their containing folders
+#   * _Offer_ to download for backup?
+#   * _Offer_ to delete automatically?
+#
+# TODO low priority:
 #   * What are those redirect URL things?
 #
 #   We do NOT scan:
@@ -35,6 +41,7 @@ def fn_fix_accessibility(args):
 
     for file in files:
         all_files_dict[int(file.id)] = file
+        pass
 
     if verbose:
         print()
@@ -139,13 +146,21 @@ def fn_fix_accessibility(args):
         gather_used_files(all_files_dict, files_in_use_dict, quiz.description, verbose)
 
     print("\n== UNUSED FILES: ===========================================================")
-    unused_sorted_files = sorted(list(all_files_dict.items() - files_in_use_dict.items()))
+    unused_sorted_files = list(all_files_dict.items() - files_in_use_dict.items())
+    unused_sorted_files.sort(key=lambda item: item[1].filename)
+
+
     for file_tuple in unused_sorted_files:
         file = file_tuple[1]
-        print(str(file.folder_id) + ":" + str(file.id) + "  " + file.display_name)
+        print(str(file.folder_id) + ":" + str(file.id) + "  " + file.filename + "  " + file.display_name)
+        fp_dest = os.path.join(dest_dir, file.filename)
+        if not os.path.exists(fp_dest):
+            file.download(fp_dest)
+        file.delete()
 
     print(f"\nTotal number of files: {len(all_files_dict)}")
     print(f"Number of Unused files: {len(unused_sorted_files)}")
+    print(f"Bqckups placed in {dest_dir}")
 
 def gather_used_files(all_files_dict, files_in_use_dict, text_to_search, verbose: bool):
     #pattern = re.compile(r'<img[^>]+src="[^"]+/files/(\d+)/preview', re.DOTALL)

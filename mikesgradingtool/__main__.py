@@ -244,7 +244,7 @@ def CLI():
                                                                      help=f'Fix accessibility issues with a Canvas course')
         parser_download_homeworks.add_argument('COURSE',
                                                help='Name of the course (e.g., 142), or \'all\' for all sections OR ELSE the alias in gradingtool.json that lists the course and homework (in which case you don\'t need the second argument)')
-        parser_download_homeworks.add_argument('-d', '--DEST',
+        parser_download_homeworks.add_argument('DEST',
                                                help='Directory to download things into before deleting them on Canvas')
         parser_download_homeworks.add_argument('-q', '--QUARTER',
                                                help='Quarter code to look for (e.g., "S20" for Spring 2020)')
