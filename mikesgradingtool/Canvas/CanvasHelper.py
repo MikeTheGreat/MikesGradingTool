@@ -98,6 +98,7 @@ def _filename_to_student_key(file):
     keys = re_studentname_key.findall(file)
 
     if len(keys) == 0:  # item does not match
+        printError(f"Given file/dir to match, but it doesn't: {file}")
         return
 
     if len(keys) > 1:
@@ -105,6 +106,8 @@ def _filename_to_student_key(file):
 
     key = keys[0]
     key = key.replace(sz_late_marker, "")
+    # remove dots
+    key = key.replace(".", "")
     if key.endswith('_'):
         key = key[:-1]
 
