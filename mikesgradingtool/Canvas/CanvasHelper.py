@@ -1383,7 +1383,11 @@ def fn_canvas_download_homework(args):
     unchanged_student_projects = list()
 
     def download_homework(sub: Submission, user: User, assign: Assignment,
-                          dest_dir:str, results_lists: grade_list_collector):
+                          dest_dir:str, results_lists: grade_list_collector, canvas = None):
+
+        sz_re_feedback_file = config.verify_keys([
+            "canvas/InstructorFeedbackFileNameRegex"])
+        re_FEEDBACK = re.compile(sz_re_feedback_file, re.IGNORECASE)
 
         attached_file_info = namedtuple('attached_file_info', 'attempt_num sub fp_dest modified_at')
 
@@ -1409,9 +1413,6 @@ def fn_canvas_download_homework(args):
                     # if real_name in files:
                     #     print(f"\t\tREPLACING Ver #{str((files[real_name]).attempt_num)} with ver #{str(prev_sub['attempt'])} for {real_name.ljust(30)}")
 
-                    sz_re_feedback_file = config.verify_keys([
-                        "canvas/InstructorFeedbackFileNameRegex"])
-                    re_FEEDBACK = re.compile(sz_re_feedback_file, re.IGNORECASE)
                     if re_FEEDBACK.search(attach['display_name']):
                         # To recreate the instructor feedback filename gibberish that Canvas normally puts into it's .zip downloads, use:
                         # this will allow us to identify and re-upload these files back to Canvas
@@ -1424,6 +1425,28 @@ def fn_canvas_download_homework(args):
 
                     attach_info = attached_file_info(prev_sub['attempt'], attach, fp_dest, attach['modified_at'])
                     files[real_name] = attach_info
+            elif "submission_type" in prev_sub \
+                    and prev_sub['submission_type'] == 'online_quiz' \
+                    and "submission_data" in prev_sub \
+                    and prev_sub['submission_data'] is not None:
+
+                if canvas is None:
+                    raise GradingToolError("Can't download ")
+
+                for answer in prev_sub['submission_data']:
+                    if "attachment_ids" in answer \
+                        and answer['attachment_ids'] is not None:
+                        for attachment in answer['attachment_ids']:
+                            print("attachment ID: " + attachment)
+
+                            # Retrieve the file object
+                            file = canvas.get_file(attachment_id)
+
+                            # Specify the local path to save the file
+                            file_path = "downloaded_file_name.extension"
+
+                            # Download the file
+                            file.download(file_path)
 
         unchanged_files = dict(filter(lambda file: file[0] in files_original \
                                                and file[1].attempt_num <= files_original[file[0]].attempt_num,
@@ -1496,6 +1519,12 @@ def fn_canvas_download_homework(args):
     if dest_dir is  None:
         dest_dir = config.getKey(f"courses/{course}/assignments/{hw_name}/dest_dir")
 
+    dest_dir = config.ensureDestDirHasSuffix(course, dest_dir)
+
+    # If we don't download anything at least the dir will exist
+    # (which hints at the problem - no downloadable files)
+    os.makedirs(dest_dir, exist_ok=True)
+
     # Confirm that the program hasn't hung for verbose and concise mode:
     if hw_name == 'all':
         print(f"\nAttempting to download all homework assignments for \"{course}\"")
@@ -1507,7 +1536,6 @@ def fn_canvas_download_homework(args):
     results_lists = grade_list_collector()
     results_lists.verbose = verbose
 
-    dest_dir = config.ensureDestDirHasSuffix(course, dest_dir)
     do_fnx_per_matching_submission(course, quarter, hw_name, dest_dir, results_lists, download_homework)
 
     if hw_name == 'all':
