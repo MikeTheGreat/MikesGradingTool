@@ -1915,19 +1915,14 @@ def fn_canvas_calculate_all_due_dates(args):
                         print() # each result is printed out on it's own line
 
                     # Copy the assignment into the 'updated assignments' map:
-                    updated_capi_assignments_dict[assign.name] = all_capi_assignments_dict[assign.name]
-
-                    # Restore the name without any goofy whitespacing:
-                    # (We need this on the next line)
-                    assign.name = assign.name_normalized
+                    updated_capi_assignments_dict[assign.name_normalized] = all_capi_assignments_dict[assign.name_normalized]
 
                     if isinstance(due_date, datetime.datetime) \
                         and due_date > end_of_quarter:
-                        canvas_assignments_after_quarter_end_dict[assign.name] = all_capi_assignments_dict[assign.name]
+                        canvas_assignments_after_quarter_end_dict[assign.name_normalized] = all_capi_assignments_dict[assign.name_normalized]
 
                 except Exception as e:
-                    print("ERROR: ", end='')
-                    print("Error" + str(e))
+                    printError("Error: " + str(type( e )) + " : " + str(e))
                 finally:
                     # Guarantee that we restore the name without any goofy whitespacing:
                     assign.name = assign.name_normalized
