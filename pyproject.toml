@@ -1,27 +1,26 @@
-[tool.poetry]
+[project]
 name = "mikesgradingtool"
 version = "0.1.2"
 description = ""
-authors = ["Mike Panitz <mike.panitz@gmail.com>"]
+authors = [{name = "Mike Panitz", email = "mike.panitz@gmail.com"}]
 readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "canvasapi>=3.2.0",
+    "argparse>=1.4.0",
+    "colorama>=0.4.6",
+    "jsmin>=3.0.1",
+    "jk-commentjson>=0.2017.10.7",
+    "keyboard>=0.13.5",
+    "rich>=13.7.1",
+    "jinja2>=3.1.3",
+    "setuptools>=69.5.1",
+    "diskcache>=5.6.3",
+]
 
-
-[tool.poetry.dependencies]
-python = "^3.12"
-canvasapi = "^3.2.0"
-argparse = "^1.4.0"
-colorama = "^0.4.6"
-jsmin = "^3.0.1"
-jk-commentjson = "^0.2017.10.7"
-keyboard = "^0.13.5"
-rich = "^13.7.1"
-jinja2 = "^3.1.3"
-setuptools = "^69.5.1"
-diskcache = "^5.6.3"
-
-[tool.poetry.scripts]
+[project.scripts]
 mikesgradingtool = "mikesgradingtool.__main__:CLI"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
