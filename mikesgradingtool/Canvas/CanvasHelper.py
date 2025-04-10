@@ -129,7 +129,10 @@ def _extract_name_and_sid_from_file(file):
     if sz_late_marker in file:
         retval += parts[2]
     else:
-        retval += parts[1]
+        if len(parts) == 1:
+            retval += "NoneSupplied"
+        else:
+            retval += parts[1]
 
     return retval
 
@@ -1099,13 +1102,6 @@ def download_all(urls, verbose):
 #            print(x.result())
             results.append(x)
 
-        # for future in futures_list:
-        #     try:
-        #         result = future.result(timeout=60)
-        #         print( "download all: " + result )
-        #         results.append(result)
-        #     except Exception:
-        #         results.append(None)
     return results
 #End of copied code
 
