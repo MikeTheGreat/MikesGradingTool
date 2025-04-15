@@ -120,8 +120,9 @@ def _extract_student_name_from_file(file):
 
 def _extract_name_and_sid_from_file(file):
     config = get_app_config()
-    sz_late_marker = config.verify_keys([
-        "canvas/LateMarker"
+    sz_late_marker, sz_missing_name = config.verify_keys([
+        "canvas/LateMarker",
+        "canvas/MissingNameSubstituteForFileNames"
     ])
 
     parts = file.split('_')
@@ -130,7 +131,7 @@ def _extract_name_and_sid_from_file(file):
         retval += parts[2]
     else:
         if len(parts) == 1:
-            retval += "NoneSupplied"
+            retval += sz_missing_name
         else:
             retval += parts[1]
 
