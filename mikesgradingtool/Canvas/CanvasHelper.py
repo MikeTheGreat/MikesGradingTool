@@ -1449,6 +1449,13 @@ def fn_canvas_download_homework(args):
                                                and file[1].attempt_num <= files_original[file[0]].attempt_num,
                                   files.items()))
 
+        # Remove any files that aren't actually present
+        # (e.g., they got downloaded but then deleted)
+        missing_files = [key for key, info in unchanged_files.items()
+                        if not os.path.exists(info.fp_dest)]
+        for fn in missing_files:
+            del unchanged_files[fn]
+
         # Take out the files that haven't changed, leaving only those files we'll need to download new copies of
         files = dict( filter( lambda file: file[0] not in unchanged_files, files.items()))
 
