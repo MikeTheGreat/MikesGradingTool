@@ -1844,9 +1844,11 @@ def fn_canvas_calculate_all_due_dates(args):
     # date to be the same as the due date
     canvas_assignments_with_lock_or_unlock_set = {}
 
-    # Any assignments set after the end of the quarter
+    # Any assignments set before the beginning
+    # (or after the end) of the quarter
     # should be emphasized in the output, so it's clear that
     # these need to be handled manually:
+    canvas_assignments_prior_to_quarter_start_dict = {}
     canvas_assignments_after_quarter_end_dict = {}
 
     # Next, actually go through and adjust the due dates:
@@ -1921,6 +1923,11 @@ def fn_canvas_calculate_all_due_dates(args):
                     # Copy the assignment into the 'updated assignments' map:
                     updated_capi_assignments_dict[assign.name_normalized] = all_capi_assignments_dict[assign.name_normalized]
 
+
+                    if isinstance(due_date, datetime.datetime) \
+                        and due_date < start_of_quarter:
+                        canvas_assignments_prior_to_quarter_start_dict[assign.name_normalized] = all_capi_assignments_dict[assign.name_normalized]
+
                     if isinstance(due_date, datetime.datetime) \
                         and due_date > end_of_quarter:
                         canvas_assignments_after_quarter_end_dict[assign.name_normalized] = all_capi_assignments_dict[assign.name_normalized]
@@ -1988,21 +1995,8 @@ def fn_canvas_calculate_all_due_dates(args):
         for assign in lock_or_unlock_list:
             assign.print()
 
-    after_quarter_end_keyset = canvas_assignments_after_quarter_end_dict.keys()
-    after_quarter_end_list = [ all_json_assignments_dict[i] for i in after_quarter_end_keyset ]
-    after_quarter_end_list.sort(key=functools.cmp_to_key(cmp_AssignmentForDisplay))
-
-    if len(after_quarter_end_list) > 0:
-        # Always list when we're making changes
-        # In no-op mode if the list is short then it's probably legit, so list it anyways
-        if not noop or len(after_quarter_end_list) < 10:
-            print(
-                Style.BRIGHT + Fore.RED + "\nAssignments that have due dates AFTER the end of the quarter: ".ljust(120,                                                                                                        "=") + Style.RESET_ALL)
-            for assign in after_quarter_end_list:
-                assign.print()
-        else:
-            print(f"\nAssignments that have due dates AFTER the end of the quarter: ")
-            print(f"\tIgnoring these {len(after_quarter_end_list)} items under the assumption that the end of quarter date wasn't changed for a no-op run")
+    print_pre_post_quarter_list(True, all_json_assignments_dict, canvas_assignments_prior_to_quarter_start_dict, noop)
+    print_pre_post_quarter_list(False, all_json_assignments_dict, canvas_assignments_after_quarter_end_dict, noop)
 
     noninst_days_list = list(due_date_info_for_course['noninstructional_days_that_prevented_classes_dict'])
     noninst_days_list.sort(key=functools.cmp_to_key(cmp_AssignmentForDisplay))
@@ -2016,6 +2010,35 @@ def fn_canvas_calculate_all_due_dates(args):
         print(Style.BRIGHT + Fore.RED + "Don't forget to update holidays, etc!!"+ Style.RESET_ALL)
 
     print() # spacer line, so it's easier to see where output ends & prompt begins :)
+
+
+def print_pre_post_quarter_list(before_start_of_quarter, all_json_assignments_dict, canvas_assignments_after_quarter_end_dict, noop):
+    if before_start_of_quarter:
+        error_msg = "BEFORE the start"
+        boundary = "start"
+    else:
+        error_msg = "AFTER the end"
+        boundary = "end"
+
+    after_quarter_end_keyset = canvas_assignments_after_quarter_end_dict.keys()
+    after_quarter_end_list = [all_json_assignments_dict[i] for i in after_quarter_end_keyset]
+    after_quarter_end_list.sort(key=functools.cmp_to_key(cmp_AssignmentForDisplay))
+
+    if len(after_quarter_end_list) > 0:
+
+        print(
+            Style.BRIGHT + Fore.RED + ("\nAssignments that have due dates " + error_msg + " of the quarter: ").ljust(
+                120,"=") + Style.RESET_ALL)
+
+        # Always list when we're making changes
+        # In no-op mode if the list is short then it's probably legit, so list it
+        if not noop or len(after_quarter_end_list) < 10:
+            for assign in after_quarter_end_list:
+                assign.print()
+        else:
+            print(
+                f"\tIgnoring these {len(after_quarter_end_list)} items under the assumption that the "+boundary+" of quarter date wasn't changed")
+
 
 # Returns:
 #   One of the following:
