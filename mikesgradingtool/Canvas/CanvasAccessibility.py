@@ -1,7 +1,7 @@
 import os
 import re
 
-from mikesgradingtool.utils.config_json import get_app_config
+# from mikesgradingtool.utils.config_json import get_app_config
 from mikesgradingtool.Canvas.CanvasHelper import get_canvas_course
 from mikesgradingtool.utils.print_utils import printError
 
@@ -23,7 +23,7 @@ def fn_fix_accessibility(args):
     quarter = args.QUARTER
     verbose = args.VERBOSE
 
-    config = get_app_config()
+    # config = get_app_config()
 
     canvas_course, canvas = get_canvas_course(course_id, verbose)
     if canvas_course is None:
@@ -160,7 +160,7 @@ def fn_fix_accessibility(args):
 
     print(f"\nTotal number of files: {len(all_files_dict)}")
     print(f"Number of Unused files: {len(unused_sorted_files)}")
-    print(f"Bqckups placed in {dest_dir}")
+    print(f"Backups placed in {dest_dir}")
 
 def gather_used_files(all_files_dict, files_in_use_dict, text_to_search, verbose: bool):
     #pattern = re.compile(r'<img[^>]+src="[^"]+/files/(\d+)/preview', re.DOTALL)

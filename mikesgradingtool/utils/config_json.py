@@ -29,7 +29,12 @@ class GradingToolConfig:
         if fpConfig is not None:
             self.fpgtConfig = fpConfig
         else:
-            self.gradingToolConfigDir = os.path.expanduser("~/.gradingtool")
+            home = os.getenv('HOME')
+            if home:
+                self.gradingToolConfigDir = os.path.join(home, ".gradingtool")
+            else:
+                self.gradingToolConfigDir = os.path.expanduser("~/.gradingtool")
+
             self.fpgtConfig = os.path.abspath(os.path.join(self.gradingToolConfigDir, 'gradingtool.json'))
 
         # case insensitive dictionary:

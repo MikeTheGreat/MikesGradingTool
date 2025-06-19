@@ -33,6 +33,8 @@ import argparse
 import os
 import sys
 
+from dotenv import load_dotenv
+
 import mikesgradingtool.Canvas.CanvasAccessibility
 from mikesgradingtool.utils.config_json import get_app_config
 from mikesgradingtool.utils.diskcache_utils import close_app_cache
@@ -239,17 +241,17 @@ def CLI():
         parser_download_homeworks.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
         parser_download_homeworks.set_defaults(func=CanvasHelper.fn_canvas_download_homework)
 
-        parser_download_homeworks = canvas_subparsers.add_parser('fix_accessibility',
+        parser_fix_accessibility = canvas_subparsers.add_parser('fix_accessibility',
                                                                      aliases=['f'],
                                                                      help=f'Fix accessibility issues with a Canvas course')
-        parser_download_homeworks.add_argument('COURSE',
+        parser_fix_accessibility.add_argument('COURSE',
                                                help='Name of the course (e.g., 142), or \'all\' for all sections OR ELSE the alias in gradingtool.json that lists the course and homework (in which case you don\'t need the second argument)')
-        parser_download_homeworks.add_argument('DEST',
+        parser_fix_accessibility.add_argument('DEST',
                                                help='Directory to download things into before deleting them on Canvas')
-        parser_download_homeworks.add_argument('-q', '--QUARTER',
+        parser_fix_accessibility.add_argument('-q', '--QUARTER',
                                                help='Quarter code to look for (e.g., "S20" for Spring 2020)')
-        parser_download_homeworks.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
-        parser_download_homeworks.set_defaults(func=mikesgradingtool.Canvas.CanvasAccessibility.fn_fix_accessibility)
+        parser_fix_accessibility.add_argument('-v', '--VERBOSE', action='store_true', help='Show extra info (verbose)')
+        parser_fix_accessibility.set_defaults(func=mikesgradingtool.Canvas.CanvasAccessibility.fn_fix_accessibility)
 
         parser_canvas_lock_assignment = canvas_subparsers.add_parser('lock_assignment',
                                                                 aliases=['l'],
@@ -373,6 +375,8 @@ def CLI():
         args.verbose = 0
 
     try:
+        load_dotenv()
+
         # call / dispatch out to the function that handles the menu item
         args.func(args)
     except GradingToolError as ex:
