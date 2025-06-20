@@ -32,7 +32,6 @@ from canvasapi.submission import Submission
 from canvasapi.user import User
 
 from colorama import Fore, Style, Back
-from jinja2 import UndefinedError, StrictUndefined, Environment
 # import win32com.client
 from rich import box
 from rich.console import Console
@@ -448,15 +447,8 @@ def fn_canvas_new_announcement(args):
 
     sz_title_template =  read_template_file(fp_title_template, "title")
     sz_message_template = read_template_file(fp_message_template, "title")
-
-    # Create a Jinja Template object
-    # Create a Jinja2 Environment with strict undefined behavior
-    env = Environment(undefined=StrictUndefined)
-
-    # Create a Jinja Template object
-    title_template = env.from_string(sz_title_template)
-
-    message_template = env.from_string(sz_message_template)
+    if not sz_title_template or not sz_message_template:
+        return
 
     print("Searching for the course in Canvas:")
     the_course, canvas = get_canvas_course(course_name, verbose)
@@ -465,9 +457,9 @@ def fn_canvas_new_announcement(args):
 
     # Define data to pass into the template
     data = {
-        'assignment': assign_obj,
-        'course': course_obj,
-        'due_date_info': due_date_info
+        'assignment': dict(assign_obj.items()),
+        'course': dict(course_obj.items()),
+        'due_date_info': dict(due_date_info.items())
     }
 
     if optional_date:
@@ -486,13 +478,13 @@ def fn_canvas_new_announcement(args):
 
     try:
         # Render the template with the data
-        title_rendered = title_template.render(data)
-        message_rendered = message_template.render(data)
-    except UndefinedError as ue:
-        printError(f"The template used a variable that wasn't defined: {ue.message}")
+        title_rendered = sz_title_template.format(**data)
+        message_rendered = sz_message_template.format(**data)
+    except KeyError as ke:
+        printError(f"The template used a variable that wasn't defined: {ke.args[0]}")
         print("data:")
         pp.pprint(data)
-        raise GradingToolError(f"The template used a variable that wasn't defined: {ue.message}")
+        raise GradingToolError(f"The template used a variable that wasn't defined: {ke.args[0]}")
 
     try:
         result = the_course.create_discussion_topic(title=title_rendered, message=message_rendered, is_announcement=True)
