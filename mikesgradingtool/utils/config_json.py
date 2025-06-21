@@ -21,6 +21,191 @@ def get_app_config():
 SZ_DEST_DIR_SUFFIX_KEY = 'dest_dir_suffix'
 SZ_ASSIGNMENTS_KEY = 'assignments'
 
+
+KEY_INHERIT_FROM = "inherits_from"
+KEY_STRING_REPLACEMENTS = "string_replacements"
+KEY_STRINGS_TO_REPLACE = "strings_to_replace"
+KEY_CONDITIONS = "conditions"
+TOP_LEVEL_COURSES_KEY = "courses"
+MEMO_REPLACEMENTS = "_cached_replacements"
+
+class LazyCaseInsensitiveWrapper:
+    def __init__(self, source):
+        if not isinstance(source, dict):
+            raise TypeError("LazyCaseInsensitiveWrapper expects a dict as source")
+        self._source = source
+        self._lower_key_map = None
+        self._wrapped_cache = {}
+
+    def _build_key_map(self):
+        self._lower_key_map = {
+            k.lower(): k for k in self._source if isinstance(k, str)
+        }
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __getitem__(self, key):
+        if not isinstance(key, str):
+            # Don't wrap or lower — directly return from source if present
+            return self._source[key]
+
+        key_lc = key.lower()
+        if self._lower_key_map is None:
+            self._build_key_map()
+
+        real_key = self._lower_key_map.get(key_lc)
+        if real_key is None:
+            raise KeyError(key)
+
+        if real_key in self._wrapped_cache:
+            return self._wrapped_cache[real_key]
+
+        value = self._source[real_key]
+        wrapped = self._wrap(value)
+        self._wrapped_cache[real_key] = wrapped
+        return wrapped
+
+    def _wrap(self, value):
+        if isinstance(value, dict):
+            return LazyCaseInsensitiveWrapper(value)
+        elif isinstance(value, list):
+            return [self._wrap(v) for v in value]
+        return value
+
+    # Returns: 2-tuple of (value, error_message)
+    # If value is found then error_message is None
+    # If value isn't found then it's None and error_message is suitable for displaying to the user
+    def get_path(self, path, delimiter="/"):
+        parts = path.split(delimiter)
+        current = self
+
+        inherit_info = None
+        path_so_far = []
+
+        for i, part in enumerate(parts):
+            path_so_far.append(part)
+
+            if isinstance(current, LazyCaseInsensitiveWrapper):
+                # Track inheritance point
+                if KEY_INHERIT_FROM in current:
+                    inherit_info = (path_so_far[:-1], current[KEY_INHERIT_FROM])
+                try:
+                    current = current[part]
+                except KeyError:
+                    current = None
+            else: # parts extends beyond the JSON path, so we asked for something that doesn't exist
+                current = None
+
+            if current is None:
+                break
+
+        if current is not None:
+            return (self._maybe_expand_value(path, current), None)
+
+        if inherit_info:
+            base_path, fallback_key = inherit_info
+            new_parts = base_path + [fallback_key] + parts[len(base_path)+1:]
+            results = self.get_path(delimiter.join(new_parts), delimiter)
+            if results[1] is None: # no errors
+                return results
+            # else return the error message below
+
+        return (None, f"Couldn't find {path_so_far[-1:]} in config{" ".join(path_so_far[:-1])}")
+
+    def _maybe_expand_value(self, path, value):
+        if not isinstance(value, str):
+            return value
+
+        parts = path.split("/")
+        if len(parts) < 2 or parts[0].lower() != TOP_LEVEL_COURSES_KEY:
+            return value
+
+        course_id = parts[1]
+        courses = self[TOP_LEVEL_COURSES_KEY]
+        course_obj = courses.get(course_id)
+        if course_obj is None:
+            return value
+
+        replacements = self._get_string_replacements_for_course(course_obj)
+        try:
+            return value.format(**replacements)
+        except Exception:
+            return value  # fallback: raw value
+
+    def _get_string_replacements_for_course(self, course_obj):
+        if MEMO_REPLACEMENTS in course_obj._source:
+            return course_obj._source[MEMO_REPLACEMENTS]
+
+        acc = {}
+        visited = set()
+        current = course_obj
+
+        while isinstance(current, LazyCaseInsensitiveWrapper):
+            obj_id = id(current._source)
+            if obj_id in visited:
+                break
+            visited.add(obj_id)
+
+            repl = current.get(KEY_STRING_REPLACEMENTS)
+            if isinstance(repl, LazyCaseInsensitiveWrapper):
+                conditions = repl.get(KEY_CONDITIONS, [])
+                if self._conditions_met(conditions):
+                    for k, v in repl.get(KEY_STRINGS_TO_REPLACE, {}).items():
+                        if k not in acc:
+                            acc[k] = v
+
+            if KEY_INHERIT_FROM in current:
+                courses = self.get(TOP_LEVEL_COURSES_KEY)
+                current = courses.get(current[KEY_INHERIT_FROM])
+            else:
+                break
+
+        course_obj._source[MEMO_REPLACEMENTS] = acc
+        return acc
+
+    def _conditions_met(self, conditions):
+        for cond in conditions:
+            if cond.get("condition") == "dir_exists":
+                if not os.path.isdir(cond.get("dir", "")):
+                    return False
+            # Add more conditions here
+        return True
+
+    def __contains__(self, key):
+        if not isinstance(key, str):
+            return key in self._source
+
+        if self._lower_key_map is None:
+            self._build_key_map()
+
+        return key.lower() in self._lower_key_map
+
+    def __repr__(self):
+        return f"<LazyCIWrapper {repr(self._source)}>"
+
+    def items(self):
+        if self._lower_key_map is None:
+            self._build_key_map()
+        return ((lower_key, self._wrap(self._source[original_key]))
+                for lower_key, original_key in self._lower_key_map.items())
+
+    def keys(self):
+        if self._lower_key_map is None:
+            self._build_key_map()
+        return self._lower_key_map.keys()
+
+    def values(self):
+        if self._lower_key_map is None:
+            self._build_key_map()
+        return (self._wrap(self._source[original_key])
+                for original_key in self._lower_key_map.values())
+
+
+
 # This is used for reading the app-wide JSON config file
 # TODO use https://docs.python.org/3/library/functools.html#functools.cached_property to memoize the config settings
 class GradingToolConfig:
@@ -37,27 +222,16 @@ class GradingToolConfig:
 
             self.fpgtConfig = os.path.abspath(os.path.join(self.gradingToolConfigDir, 'gradingtool.json'))
 
-        # case insensitive dictionary:
-        # from https://stackoverflow.com/a/16817943/250610
-        self.hive = CaseInsensitiveDict()
         self.LoadConfig()
-
-
-    def GetConfigFileDirPath(self):
-        return self.gradingToolConfigDir
-
 
     def LoadConfig(self):
         try:
             with open(self.fpgtConfig, encoding="utf8") as open_file:
                 minified = jsmin(open_file.read(), quote_chars="'\"`")
-                self.hive = json.loads(minified)
-                self.hive = CaseInsensitiveDict_Recursive(self.hive)
+                self.hive = LazyCaseInsensitiveWrapper(json.loads(minified))
 
                 if "courses" not in self.hive:
                     printError("Loading config: did not find a top-level 'courses' object!!!!")
-                else:
-                    mergeInheritedCourses(self.hive["courses"])
 
             # import pprint
             # pp = pprint.PrettyPrinter(indent=2, width=200)
@@ -85,11 +259,6 @@ class GradingToolConfig:
         self.LoadConfig()
         return self
 
-    def getKeyParts(self, key):
-        if key[-1:] == os.sep or key[-1:] == os.altsep:
-            key = key[:-1]
-        keyparts:typing.List[str] = key.split('/')
-        return key, keyparts
 
     # If there's a 'course' above the key and that course
     # contains 'course_dir_suffix' then concatenate that
@@ -98,33 +267,6 @@ class GradingToolConfig:
     # a base course, but this way the second section downloads homeworks
     # into a unique directory
 
-    # UNUSED: Get a dest_dir and fix it up if there's a 'course' with a suffix above it
-    def getDestDir(self, key:str):
-        key, keyparts = self.getKeyParts(key)
-        sz_course = ""
-        course = None
-
-        dest_dir = self.getKey(key)
-
-        for idx, part in enumerate(keyparts):
-            sz_course = sz_course + "/" + part
-            if part == 'courses':
-                sz_course = sz_course + "/" + keyparts[idx+1]
-                course = self.getKey(sz_course[1:], "") # remove leading /
-                break
-
-        if course is None or course == "":
-            # Couldn't find 'courses' in the path; this is ok - just return the dest_dir
-            return dest_dir
-
-        if  SZ_DEST_DIR_SUFFIX_KEY not in course[SZ_ASSIGNMENTS_KEY]:
-            return dest_dir
-
-        suffix = course[SZ_DEST_DIR_SUFFIX_KEY]
-
-        dest_dir += suffix
-
-        return dest_dir
 
     # If course has an 'assignments' with 'dest_dir_suffix' in it then append that to dest_dir
     # This is idempotent: nothing is changed if the suffix is already at the end of dest_dir
@@ -150,26 +292,12 @@ class GradingToolConfig:
     #   If 'default' is set to something OTHER THAN None then this will be returned
     #   Else an exception will the thrown
     def getKey(self, key: str, default:typing.Any = None):
-        key, keyparts = self.getKeyParts(key)
-
-        previous_value = ""
-        theDictionary = self.hive  # will move down into sub-dictionaries
-        goodSoFar:str = ""
-
-        for part in keyparts:
-            if part not in theDictionary:
-                if default is not None:
-                    return default
-                else:
-                    printError(f"Couldn't find {part} in config{goodSoFar}")
-                    sys.exit(-1)
-
-            goodSoFar = goodSoFar + f"['{part}']"
-            previous_value = theDictionary[part]
-            theDictionary = theDictionary[part]
-
-        # May as well return the value, given that we did all this work to walk here?
-        return previous_value
+        (val, err) = self.hive.get_path(key)
+        if err:
+            printError(err)
+            raise Exception(err)
+        else:
+            return val
 
     ### Will throw an exception if the key/keypath doesn't exist
     # return the string/value is there's only 1 thing in the 'keys' list
@@ -193,13 +321,6 @@ class GradingToolConfig:
             return values[0] # return this, exactly
 
 
-def CaseInsensitiveDict_Recursive(dictionary: dict):
-    cid = CaseInsensitiveDict()
-    for k, d in dictionary.items():
-        if isinstance(d, dict):
-            d = CaseInsensitiveDict_Recursive(d)
-        cid[k] = d
-    return cid
 
 HWInfo = namedtuple('HWInfo', 'course hw fp_dest_dir fp_template prior_version next_version')
 def lookupHWInfoFromAlias(possible_alias):
@@ -242,161 +363,3 @@ def lookupHWInfoFromAlias(possible_alias):
         next_version = None
 
     return HWInfo(course, hw, fp_hw_dest_dir, fp_hw_template, prior_version, next_version)
-
-
-SZ_COURSE_TO_INHERIT_FROM = "inherits_from"
-def mergeInheritedCourses(json_config_courses):
-    for course_name in json_config_courses:
-        course = json_config_courses[course_name]
-
-        if SZ_COURSE_TO_INHERIT_FROM in course:
-
-            base_course_name = course[SZ_COURSE_TO_INHERIT_FROM]
-
-            if base_course_name not in json_config_courses:
-                printError(f"In JSON config file, course '{course_name}' has 'inherits_from' key but {base_course_name} not found in 'courses'")
-                continue
-
-            base_course = json_config_courses[base_course_name]
-            json_config_courses[course_name] = mergeBaseCourseIntoNewCourse(json_config_courses, base_course, course)
-
-def merge_CaseInsensitiveDicts(src, dest):
-    "merges src into dest, recursively merging dictionary elements and overwriting non-dictionary keys in dest with the corresponding value in src"
-    # based on https://stackoverflow.com/a/7205107/250610
-    for key in src:
-        if key in dest:
-            if isinstance(dest[key], CaseInsensitiveDict) and isinstance(src[key], CaseInsensitiveDict):
-                merge_CaseInsensitiveDicts(src[key], dest[key])
-            elif dest[key] == src[key]:
-                pass  # same leaf value
-            else:
-                # replace key with src value (for non-dictionary elements)
-                dest[key] = copy.deepcopy(src[key])
-                # Uncomment this to throw an exception, instead of replacing:
-                # raise Exception('Conflict at %s' % '.'.join(path + [str(key)]))
-        else:
-            dest[key] = copy.deepcopy(src[key])
-    return dest
-
-def mergeBaseCourseIntoNewCourse(json_config_courses, base_course, course):
-    if SZ_COURSE_TO_INHERIT_FROM in base_course:
-        base_course = mergeBaseCourseIntoNewCourse(json_config_courses, \
-                                                   json_config_courses[base_course[SZ_COURSE_TO_INHERIT_FROM]], \
-                                                   base_course)
-    else:
-        base_course = copy.deepcopy(base_course)
-
-    course = merge_CaseInsensitiveDicts(course, base_course)
-
-    return course
-
-
-########################################################################################################################
-########################################################################################################################
-########################################################################################################################
-########################################################################################################################
-
-# this is used for managing the per-assignment JSON config files
-# that the autograded assignments use
-# Do NOT use this for gradingTool.json config file!
-SZ_NEXT_CONFIG_FILE_KEY = "next_config_file"
-SZ_CONFIG_FILE_LIST_KEY = "loaded_config_files"
-
-def fixupPaths(currentFile, configFileBaseDir):
-    # "" fix up things that appear to be paths, in order to ensure that they're absolute
-    # a path is either an absolute path,
-    # or a relative path to an existing file/directory
-    # relative paths are changed into absolute paths
-    #
-    # currentFile is a dictionary of keys, some of which may be paths
-    # configFileBaseDir is the dir to use a a base for attempting to resolve relative paths
-    # ""
-    for key in currentFile:
-
-        if type(currentFile[key]) is dict:
-            fixupPaths(currentFile[key], configFileBaseDir)
-            continue
-        if type(currentFile[key]) is not str:
-            continue
-        if os.path.isabs(currentFile[key]):
-            continue
-
-        # Let's see if this string value actually points to
-        # an existing file/dir:
-        possiblePath = os.path.normpath(
-            os.path.join(configFileBaseDir, currentFile[key]))
-        if os.path.exists(possiblePath) or \
-                key == "output_dir":
-            currentFile[key] = possiblePath
-            # continue # not needed
-
-def merge(dest, src, path=None):
-    "merges src into dest, recursively merging dictionary elements and overwriting non-dictionary keys in dest with the corresponding value in src"
-    # from https://stackoverflow.com/a/7205107/250610
-    if path is None:
-        path = []
-    for key in src:
-        if key in dest:
-            if isinstance(dest[key], dict) and isinstance(src[key], dict):
-                merge(dest[key], src[key], path + [str(key)])
-            elif dest[key] == src[key]:
-                pass  # same leaf value
-            else:
-                # replace key with src value (for non-dictionary elements)
-                dest[key] = src[key]
-                # Uncomment this to throw an exception, instead of replacing:
-                # raise Exception('Conflict at %s' % '.'.join(path + [str(key)]))
-        else:
-            dest[key] = src[key]
-    return dest
-
-def LoadConfigFile(fpConfigFile):
-    # ""
-    #     fpConfigFile: a full path to the JSON file to load
-    #
-    #     returns: a dictionary of all the key/values in that file
-    #              or 'None' if the file can't be loaded
-    #
-    #     If the JSON file contains a key named "next_config_file" then we will recursively
-    #         load that file, then update the recursive file with the keys from the current file.
-    #         This will ensure that the current file takes precedence over files loaded later
-    #         This will enable us to use 'next_config_file' as a 'base class' of configs which
-    #             can be overridden / replaced in this file
-    #
-    # ""
-    if not os.path.isfile(fpConfigFile):
-        raise GradingToolError(f"Could not load config file {fpConfigFile}")
-
-    #    configFileBaseDir:
-    #        The dir containing this config file is used as the 'base dir'
-    #        for any relative paths.
-    #           (this is os.path.dirname(fpConfigFile) is used)
-    configFileBaseDir = os.path.dirname(fpConfigFile)
-
-    with open(fpConfigFile, "r") as fileADesc:
-        try:
-            currentFile = jk_commentjson.commentjson.load(fileADesc)
-        except jk_commentjson.commentjson.JSONLibraryException as jde:
-            printError("Underlying json library had a problem with the Assign.config.json file (see details below:)")
-            print(str(jde))
-            printError("Underlying json library had a problem with the Assign.config.json file (see details above)")
-            print("\tWatch out for c:\\\\Top\\next when you really wanted C:\\\\Top\\\\next\n\n")
-            sys.exit(1)
-
-        # next, fixup anything that we want to adjust
-        # by doing this here, we'll do this exactly once per file that we load
-        fixupPaths(currentFile, configFileBaseDir)
-
-    if SZ_NEXT_CONFIG_FILE_KEY in currentFile:
-        recursiveFile = LoadConfigFile(
-            currentFile[SZ_NEXT_CONFIG_FILE_KEY])
-        # replace stuff in recursiveFile with any overriding values in currentFile:
-        merge(recursiveFile, currentFile)
-        currentFile = recursiveFile
-    else:
-        assert SZ_CONFIG_FILE_LIST_KEY not in currentFile
-        currentFile[SZ_CONFIG_FILE_LIST_KEY] = list()
-
-    currentFile[SZ_CONFIG_FILE_LIST_KEY].insert(0, fpConfigFile)
-
-    return currentFile

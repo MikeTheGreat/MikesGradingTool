@@ -14,7 +14,6 @@ import keyboard
 
 from mikesgradingtool.SubmissionHelpers.StudentSubmission import StudentSubmission
 from mikesgradingtool.SubmissionHelpers.StudentSubmissionListCollection import StudentSubmissionListCollection
-from mikesgradingtool.utils.config_json import LoadConfigFile, SZ_CONFIG_FILE_LIST_KEY
 from mikesgradingtool.utils.config_json import get_app_config
 from mikesgradingtool.utils.misc_utils import cd, UniqueFileName, is_file_locked, lock_file
 from mikesgradingtool.utils.my_logging import get_logger
@@ -222,6 +221,111 @@ def copy_template_to_regex_matches(fp_CopyTemplateToHere, fpTemplate, sz_re_file
     return (c_students, c_copied)
 
 
+# this is used for managing the per-assignment JSON config files
+# that the autograded assignments use
+# Do NOT use this for gradingTool.json config file!
+SZ_NEXT_CONFIG_FILE_KEY = "next_config_file"
+SZ_CONFIG_FILE_LIST_KEY = "loaded_config_files"
+
+def fixupPaths(currentFile, configFileBaseDir):
+    # "" fix up things that appear to be paths, in order to ensure that they're absolute
+    # a path is either an absolute path,
+    # or a relative path to an existing file/directory
+    # relative paths are changed into absolute paths
+    #
+    # currentFile is a dictionary of keys, some of which may be paths
+    # configFileBaseDir is the dir to use a a base for attempting to resolve relative paths
+    # ""
+    for key in currentFile:
+
+        if type(currentFile[key]) is dict:
+            fixupPaths(currentFile[key], configFileBaseDir)
+            continue
+        if type(currentFile[key]) is not str:
+            continue
+        if os.path.isabs(currentFile[key]):
+            continue
+
+        # Let's see if this string value actually points to
+        # an existing file/dir:
+        possiblePath = os.path.normpath(
+            os.path.join(configFileBaseDir, currentFile[key]))
+        if os.path.exists(possiblePath) or \
+                key == "output_dir":
+            currentFile[key] = possiblePath
+            # continue # not needed
+
+def merge(dest, src, path=None):
+    "merges src into dest, recursively merging dictionary elements and overwriting non-dictionary keys in dest with the corresponding value in src"
+    # from https://stackoverflow.com/a/7205107/250610
+    if path is None:
+        path = []
+    for key in src:
+        if key in dest:
+            if isinstance(dest[key], dict) and isinstance(src[key], dict):
+                merge(dest[key], src[key], path + [str(key)])
+            elif dest[key] == src[key]:
+                pass  # same leaf value
+            else:
+                # replace key with src value (for non-dictionary elements)
+                dest[key] = src[key]
+                # Uncomment this to throw an exception, instead of replacing:
+                # raise Exception('Conflict at %s' % '.'.join(path + [str(key)]))
+        else:
+            dest[key] = src[key]
+    return dest
+
+def LoadAutograderConfigFile(fpConfigFile):
+    # ""
+    #     fpConfigFile: a full path to the JSON file to load
+    #
+    #     returns: a dictionary of all the key/values in that file
+    #              or 'None' if the file can't be loaded
+    #
+    #     If the JSON file contains a key named "next_config_file" then we will recursively
+    #         load that file, then update the recursive file with the keys from the current file.
+    #         This will ensure that the current file takes precedence over files loaded later
+    #         This will enable us to use 'next_config_file' as a 'base class' of configs which
+    #             can be overridden / replaced in this file
+    #
+    # ""
+    if not os.path.isfile(fpConfigFile):
+        raise GradingToolError(f"Could not load config file {fpConfigFile}")
+
+    #    configFileBaseDir:
+    #        The dir containing this config file is used as the 'base dir'
+    #        for any relative paths.
+    #           (this is os.path.dirname(fpConfigFile) is used)
+    configFileBaseDir = os.path.dirname(fpConfigFile)
+
+    with open(fpConfigFile, "r") as fileADesc:
+        try:
+            currentFile = jk_commentjson.commentjson.load(fileADesc)
+        except jk_commentjson.commentjson.JSONLibraryException as jde:
+            printError("Underlying json library had a problem with the Assign.config.json file (see details below:)")
+            print(str(jde))
+            printError("Underlying json library had a problem with the Assign.config.json file (see details above)")
+            print("\tWatch out for c:\\\\Top\\next when you really wanted C:\\\\Top\\\\next\n\n")
+            sys.exit(1)
+
+        # next, fixup anything that we want to adjust
+        # by doing this here, we'll do this exactly once per file that we load
+        fixupPaths(currentFile, configFileBaseDir)
+
+    if SZ_NEXT_CONFIG_FILE_KEY in currentFile:
+        recursiveFile = LoadAutograderConfigFile(
+            currentFile[SZ_NEXT_CONFIG_FILE_KEY])
+        # replace stuff in recursiveFile with any overriding values in currentFile:
+        merge(recursiveFile, currentFile)
+        currentFile = recursiveFile
+    else:
+        assert SZ_CONFIG_FILE_LIST_KEY not in currentFile
+        currentFile[SZ_CONFIG_FILE_LIST_KEY] = list()
+
+    currentFile[SZ_CONFIG_FILE_LIST_KEY].insert(0, fpConfigFile)
+
+    return currentFile
+
 def autograder_common_actions(args, sz_glob_student_submission_dir, fn_organize_submissions, fn_convert_dir_to_student_sub):
     fp_grade_these: str = args.SRC
     fp_output: str = args.DEST
@@ -252,7 +356,7 @@ def autograder_common_actions(args, sz_glob_student_submission_dir, fn_organize_
     start = datetime.datetime.now()
 
     fpADesc = os.path.join(fp_grade_these, fn_autograder_config)
-    assign_desc = LoadConfigFile(fpADesc)
+    assign_desc = LoadAutograderConfigFile(fpADesc)
 
     #  allow command line to override config file for where to put output
     if fp_output is not None:
