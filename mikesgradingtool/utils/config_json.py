@@ -83,16 +83,17 @@ class LazyCaseInsensitiveWrapper:
         parts = path.split(delimiter)
         current = self
 
-        inherit_info = None
+        inherit_info_path = None
         path_so_far = []
 
         for i, part in enumerate(parts):
-            path_so_far.append(part)
 
             if isinstance(current, LazyCaseInsensitiveWrapper):
                 # Track inheritance point
                 if KEY_INHERIT_FROM in current:
-                    inherit_info = (path_so_far[:-1], current[KEY_INHERIT_FROM])
+                    # Inherited course is a sibling, so remove the current leaf of the path to get the common parent
+                    inherit_info_path = path_so_far[:-1] + [current[KEY_INHERIT_FROM]]
+
                 try:
                     current = current[part]
                 except KeyError:
@@ -100,21 +101,28 @@ class LazyCaseInsensitiveWrapper:
             else: # parts extends beyond the JSON path, so we asked for something that doesn't exist
                 current = None
 
+            path_so_far.append(part)
+
             if current is None:
                 break
 
         if current is not None:
             return (self._maybe_expand_value(path, current), None)
 
-        if inherit_info:
-            base_path, fallback_key = inherit_info
-            new_parts = base_path + [fallback_key] + parts[len(base_path)+1:]
+        # When we can't find the key, list out all the places we looked for it
+        possible_prior_errors = ""
+
+        if inherit_info_path:
+            new_parts = inherit_info_path + parts[len(inherit_info_path):]
             results = self.get_path(delimiter.join(new_parts), delimiter)
             if results[1] is None: # no errors
                 return results
-            # else return the error message below
+            else:
+                possible_prior_errors = "\n" + results[1]
+                # next: return the error message below
 
-        return (None, f"Couldn't find {path_so_far[-1:]} in config{" ".join(path_so_far[:-1])}")
+        return (None, f"Config file lookup error: Couldn't find {path_so_far[-1:]} in {"/".join(path_so_far[:-1])}"
+                        + possible_prior_errors)
 
     def _maybe_expand_value(self, path, value):
         if not isinstance(value, str):
@@ -294,8 +302,11 @@ class GradingToolConfig:
     def getKey(self, key: str, default:typing.Any = None):
         (val, err) = self.hive.get_path(key)
         if err:
-            printError(err)
-            raise Exception(err)
+            if default is not None:
+                return default
+            else:
+                printError(err)
+                raise Exception(err)
         else:
             return val
 
