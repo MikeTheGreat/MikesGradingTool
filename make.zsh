@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-uv cache clean
+# uv cache clean  #
 
 uv build --wheel
 

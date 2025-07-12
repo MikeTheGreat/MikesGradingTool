@@ -183,6 +183,22 @@ class LazyCaseInsensitiveWrapper:
             # Add more conditions here
         return True
 
+    def __setitem__(self, key, value):
+        if not isinstance(key, str):
+            self._source[key] = value
+            return
+
+        key_lc = key.lower()
+
+        if self._lower_key_map is None:
+            self._build_key_map()
+
+        # Use existing key casing if present
+        real_key = self._lower_key_map.get(key_lc, key)
+        self._source[real_key] = value
+        self._lower_key_map[key_lc] = real_key
+        self._wrapped_cache.pop(real_key, None)
+
     def __contains__(self, key):
         if not isinstance(key, str):
             return key in self._source
