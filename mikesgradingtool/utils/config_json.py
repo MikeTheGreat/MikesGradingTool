@@ -1,17 +1,15 @@
 from collections import namedtuple
-import copy
+from collections.abc import MutableMapping
 import functools
 import json
 import json.decoder
 import os.path
 import re
-import sys
 import typing
 
-import jk_commentjson
-from mikesgradingtool.utils.print_utils import printError, GradingToolError
-from requests.structures import CaseInsensitiveDict
 from jsmin import jsmin
+
+from mikesgradingtool.utils.print_utils import printError, GradingToolError
 
 @functools.lru_cache(1)
 def get_app_config():
@@ -29,7 +27,7 @@ KEY_CONDITIONS = "conditions"
 TOP_LEVEL_COURSES_KEY = "courses"
 MEMO_REPLACEMENTS = "_cached_replacements"
 
-class LazyCaseInsensitiveWrapper:
+class LazyCaseInsensitiveWrapper(MutableMapping):
     def __init__(self, source):
         if not isinstance(source, dict):
             raise TypeError("LazyCaseInsensitiveWrapper expects a dict as source")
@@ -42,22 +40,14 @@ class LazyCaseInsensitiveWrapper:
             k.lower(): k for k in self._source if isinstance(k, str)
         }
 
-    def get(self, key, default=None):
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
     def __getitem__(self, key):
         if not isinstance(key, str):
-            # Don't wrap or lower — directly return from source if present
             return self._source[key]
 
-        key_lc = key.lower()
         if self._lower_key_map is None:
             self._build_key_map()
 
-        real_key = self._lower_key_map.get(key_lc)
+        real_key = self._lower_key_map.get(key.lower())
         if real_key is None:
             raise KeyError(key)
 
@@ -69,6 +59,45 @@ class LazyCaseInsensitiveWrapper:
         self._wrapped_cache[real_key] = wrapped
         return wrapped
 
+    def __setitem__(self, key, value):
+        if not isinstance(key, str):
+            self._source[key] = value
+            return
+
+        if self._lower_key_map is None:
+            self._build_key_map()
+
+        key_lc = key.lower()
+        real_key = self._lower_key_map.get(key_lc, key)
+
+        self._source[real_key] = value
+        self._lower_key_map[key_lc] = real_key
+        self._wrapped_cache.pop(real_key, None)
+
+    def __delitem__(self, key):
+        if not isinstance(key, str):
+            del self._source[key]
+            return
+
+        if self._lower_key_map is None:
+            self._build_key_map()
+
+        key_lc = key.lower()
+        real_key = self._lower_key_map.pop(key_lc, None)
+        if real_key is None:
+            raise KeyError(key)
+
+        del self._source[real_key]
+        self._wrapped_cache.pop(real_key, None)
+
+    def __iter__(self):
+        if self._lower_key_map is None:
+            self._build_key_map()
+        return iter(self._lower_key_map.keys())
+
+    def __len__(self):
+        return len(self._source)
+
     def _wrap(self, value):
         if isinstance(value, dict):
             return LazyCaseInsensitiveWrapper(value)
@@ -76,29 +105,35 @@ class LazyCaseInsensitiveWrapper:
             return [self._wrap(v) for v in value]
         return value
 
-    # Returns: 2-tuple of (value, error_message)
-    # If value is found then error_message is None
-    # If value isn't found then it's None and error_message is suitable for displaying to the user
+    def __contains__(self, key):
+        if not isinstance(key, str):
+            return key in self._source
+
+        if self._lower_key_map is None:
+            self._build_key_map()
+
+        return key.lower() in self._lower_key_map
+
+    def __repr__(self):
+        return f"<LazyCIWrapper {repr(self._source)}>"
+
+    # -------- get_path and string expansion logic --------
+
     def get_path(self, path, delimiter="/"):
         parts = path.split(delimiter)
         current = self
-
         inherit_info_path = None
         path_so_far = []
 
         for i, part in enumerate(parts):
-
             if isinstance(current, LazyCaseInsensitiveWrapper):
-                # Track inheritance point
                 if KEY_INHERIT_FROM in current:
-                    # Inherited course is a sibling, so remove the current leaf of the path to get the common parent
                     inherit_info_path = path_so_far[:-1] + [current[KEY_INHERIT_FROM]]
-
                 try:
                     current = current[part]
                 except KeyError:
                     current = None
-            else: # parts extends beyond the JSON path, so we asked for something that doesn't exist
+            else:
                 current = None
 
             path_so_far.append(part)
@@ -109,17 +144,15 @@ class LazyCaseInsensitiveWrapper:
         if current is not None:
             return (self._maybe_expand_value(path, current), None)
 
-        # When we can't find the key, list out all the places we looked for it
         possible_prior_errors = ""
 
         if inherit_info_path:
             new_parts = inherit_info_path + parts[len(inherit_info_path):]
             results = self.get_path(delimiter.join(new_parts), delimiter)
-            if results[1] is None: # no errors
+            if results[1] is None:
                 return results
             else:
                 possible_prior_errors = "\n" + results[1]
-                # next: return the error message below
 
         return (None, f"Config file lookup error: Couldn't find {path_so_far[-1:]} in {"/".join(path_so_far[:-1])}"
                         + possible_prior_errors)
@@ -139,10 +172,17 @@ class LazyCaseInsensitiveWrapper:
             return value
 
         replacements = self._get_string_replacements_for_course(course_obj)
-        try:
-            return value.format(**replacements)
-        except Exception:
-            return value  # fallback: raw value
+
+        prev = None
+        current = value
+        while current != prev:
+            prev = current
+            try:
+                current = current.format(**replacements)
+            except KeyError:
+                break  # fail gracefully if placeholders are missing
+
+        return current
 
     def _get_string_replacements_for_course(self, course_obj):
         if MEMO_REPLACEMENTS in course_obj._source:
@@ -180,53 +220,7 @@ class LazyCaseInsensitiveWrapper:
             if cond.get("condition") == "dir_exists":
                 if not os.path.isdir(cond.get("dir", "")):
                     return False
-            # Add more conditions here
         return True
-
-    def __setitem__(self, key, value):
-        if not isinstance(key, str):
-            self._source[key] = value
-            return
-
-        key_lc = key.lower()
-
-        if self._lower_key_map is None:
-            self._build_key_map()
-
-        # Use existing key casing if present
-        real_key = self._lower_key_map.get(key_lc, key)
-        self._source[real_key] = value
-        self._lower_key_map[key_lc] = real_key
-        self._wrapped_cache.pop(real_key, None)
-
-    def __contains__(self, key):
-        if not isinstance(key, str):
-            return key in self._source
-
-        if self._lower_key_map is None:
-            self._build_key_map()
-
-        return key.lower() in self._lower_key_map
-
-    def __repr__(self):
-        return f"<LazyCIWrapper {repr(self._source)}>"
-
-    def items(self):
-        if self._lower_key_map is None:
-            self._build_key_map()
-        return ((lower_key, self._wrap(self._source[original_key]))
-                for lower_key, original_key in self._lower_key_map.items())
-
-    def keys(self):
-        if self._lower_key_map is None:
-            self._build_key_map()
-        return self._lower_key_map.keys()
-
-    def values(self):
-        if self._lower_key_map is None:
-            self._build_key_map()
-        return (self._wrap(self._source[original_key])
-                for original_key in self._lower_key_map.values())
 
 
 
