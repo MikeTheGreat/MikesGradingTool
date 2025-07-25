@@ -234,11 +234,11 @@ class GradingToolConfig:
         else:
             home = os.getenv('HOME')
             if home:
-                self.gradingToolConfigDir = os.path.join(home, ".gradingtool")
+                self.gradingToolConfigDir = os.path.join(home, ".config", "mikesgradingtool")
             else:
-                self.gradingToolConfigDir = os.path.expanduser("~/.gradingtool")
+                self.gradingToolConfigDir = os.path.join(os.path.expanduser("~"), ".config", "mikesgradingtool")
 
-            self.fpgtConfig = os.path.abspath(os.path.join(self.gradingToolConfigDir, 'gradingtool.json'))
+            self.fpgtConfig = os.path.abspath(os.path.join(self.gradingToolConfigDir, 'config.json'))
 
         self.LoadConfig()
 
