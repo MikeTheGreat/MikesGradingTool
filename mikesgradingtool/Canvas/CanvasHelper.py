@@ -609,6 +609,11 @@ def fn_canvas_download_revision_template(args):
         printError(f"Couldn't find an alias for {args.alias}")
         sys.exit(-1)
 
+    if '' == get_app_config().getKey(f"courses/{hw_info.course}/assignments/{hw_info.hw}", ''):
+        printError(
+            f"Found the alias \"{args.alias}\", but the underlying \"{hw_info.hw}\" in \"{hw_info.course}\" does NOT exist")
+        sys.exit(-1)
+
     # download:
     args.COURSE = args.alias
     args.QUARTER = None
@@ -911,9 +916,14 @@ def fn_canvas_upload_feedback_via_CAPI(args):
         printError("Homework folder does not exist: " + dest_dir )
         sys.exit(-1);
 
+    course_canvas_name = config.getKey(f"courses/{course}/canvas_api/sz_re_course").replace('\\', '')
+    course_canvas_name = 'You are uploading to: ' + Style.BRIGHT + Fore.YELLOW + Back.BLACK \
+          + course_canvas_name \
+          + Style.RESET_ALL
+
     hw_full_name = config.getKey(f"courses/{course}/assignments/{hw_name}/full_name")
 
-    if not confirm_choice("Do you want to upload feedback for this course?", hw_full_name, \
+    if not confirm_choice("Do you want to upload feedback for this?",course_canvas_name,  hw_full_name, \
                    "Uploading homework feedback files to Canvas", \
                    "Operation canceled - NO FILES UPLOADED"):
         return
@@ -1358,6 +1368,11 @@ def fn_canvas_download_homework(args):
         hw_name = args.HOMEWORK_NAME
         dest_dir = args.DEST
 
+    if '' == get_app_config().getKey(f"courses/{course}/assignments/{hw_name}", ''):
+        printError(
+            f"Found the alias \"{args.COURSE}\", but the underlying \"{hw_name}\" in \"{course}\" does NOT exist")
+        sys.exit(-1)
+
     quarter = args.QUARTER
     verbose = args.VERBOSE
 
@@ -1660,7 +1675,7 @@ def cmp_AssignmentForDisplay_by_name(a,b):
         return -1 if a.title < b.title else +1
 
 
-def confirm_choice(szPrompt: str, szTypeThis:str, szMsgProceeding: str, szMsgCancel:str):
+def confirm_choice(szPrompt: str, szRemindUserAbout: str, szTypeThis:str, szMsgProceeding: str, szMsgCancel:str):
     szTypeThis = szTypeThis.strip()
 
     print("\n"+szPrompt)
@@ -1670,6 +1685,9 @@ def confirm_choice(szPrompt: str, szTypeThis:str, szMsgProceeding: str, szMsgCan
             + Style.RESET_ALL )
     print("(this is case sensitive), followed by Enter/Return")
     print("Type anything else (or leave it blank) and press Enter/Return to cancel")
+
+    if szRemindUserAbout is not None:
+        print(szRemindUserAbout)
 
     confirm = input("").strip()
 
@@ -1795,7 +1813,7 @@ def fn_canvas_calculate_all_due_dates(args):
     print(f"Getting Assignments for \"{Style.BRIGHT + Fore.RED + course.name+ Style.RESET_ALL}\"")
 
     if not noop:
-        if not confirm_choice("Do you want to change the due dates for this course?", course.name, \
+        if not confirm_choice("Do you want to change the due dates for this course?", None, course.name, \
                        "Updating due dates now", \
                        "Operation canceled - NO CHANGES MADE"):
             return
