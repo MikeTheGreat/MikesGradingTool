@@ -1,7 +1,10 @@
+btt_links/*
+mikes_config/*
+IGNORE/*
+
 # Created by https://www.toptal.com/developers/gitignore/api/python,pycharm,windows,macos,linux
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,pycharm,windows,macos,linux
 
-btt_links/*
 
 ### Linux ###
 *~
