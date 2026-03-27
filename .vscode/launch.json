@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Extract 142",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/extract_canvas_assignments.py",
+            "python": "${workspaceFolder}/.venv_linux/bin/python",
+            "console": "integratedTerminal",
+            "args": [
+                "--course",
+                "142",
+                "--output",
+                "/home/mike/Dropbox/Work/Courses/MikesGradingTool/IGNORE/142_assignments.json"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Extract 143",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/extract_canvas_assignments.py",
+            "python": "${workspaceFolder}/.venv_linux/bin/python",
+            "console": "integratedTerminal",
+            "args": [
+                "--course",
+                "143",
+                "--output",
+                "/home/mike/Dropbox/Work/Courses/MikesGradingTool/IGNORE/143_assignments.json"
+            ],
+            "justMyCode": false
+        }
+    ]
+}
